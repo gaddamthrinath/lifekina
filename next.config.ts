@@ -10,8 +10,14 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   reactStrictMode: true,
-  allowedDevOrigins: ['192.168.1.56'],
-  basePath: basePath,
+  allowedDevOrigins: [
+    '192.168.1.56',
+    'lifekina.stagezone.live',
+    '*.stagezone.live',
+    'localhost:3000',
+  ],
+  // With a custom domain (lifekina.stagezone.live), the site is served from the root domain "/"
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
 };
 
 export default nextConfig;
