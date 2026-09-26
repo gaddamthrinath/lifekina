@@ -1,10 +1,18 @@
 import type { NextConfig } from 'next';
 
+const isProd = process.env.NODE_ENV === 'production';
+// If deploying to https://<username>.github.io/<repo-name>, NEXT_PUBLIC_BASE_PATH can be passed in CI
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+
 const nextConfig: NextConfig = {
-  // All rendering is client-side only — no server components needed
+  output: 'export',
+  images: {
+    unoptimized: true,
+  },
   reactStrictMode: true,
   allowedDevOrigins: ['192.168.1.56'],
-
+  basePath: basePath,
 };
 
 export default nextConfig;
+
