@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Download, Upload, Trash2, Lock, AlertTriangle, CheckCircle, Fingerprint } from 'lucide-react';
+import { Download, Upload, Trash2, Lock, AlertTriangle, CheckCircle, Fingerprint, ArrowLeftRight, QrCode, Smartphone } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import SyncModal from '@/components/SyncModal';
 import { CURRENCIES } from '@/lib/currencies';
 import { Settings } from '@/lib/types';
 import { registerWebAuthnCredential } from '@/lib/webauthn';
@@ -17,6 +18,7 @@ const DATE_FORMATS: { value: Settings['dateFormat']; label: string }[] = [
 export default function SettingsPage() {
   const { settings, updateSetting, exportData, importData, clearData } = useApp();
   const [showClear, setShowClear] = useState(false);
+  const [showSync,  setShowSync]  = useState(false);
   const [clearing, setClearing]   = useState(false);
   const [importErr, setImportErr]  = useState('');
   const [importOk,  setImportOk]   = useState(false);
@@ -95,6 +97,48 @@ export default function SettingsPage() {
               ))}
             </select>
           </div>
+        </div>
+      </div>
+
+      {/* Device Sync (P2P) Section */}
+      <div className="s-section" style={{ border: '1.5px solid var(--brand-mid)', background: 'linear-gradient(180deg, var(--brand-light) 0%, var(--bg-surface) 60px)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 'var(--r-md)',
+                background: 'var(--brand)',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <ArrowLeftRight size={18} />
+            </div>
+            <div>
+              <div className="s-section-title" style={{ margin: 0, color: 'var(--text-main)' }}>
+                Direct Device Sync (P2P)
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--brand-dark)', fontWeight: 600 }}>
+                Serverless WebRTC • Encrypted QR Handshake
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowSync(true)}
+            id="open-sync-btn"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <QrCode size={14} /> Sync Devices
+          </button>
+        </div>
+
+        <div style={{ fontSize: 13, color: 'var(--text-sub)', lineHeight: 1.5 }}>
+          Synchronize expenses, categories, tasks, notes, and reminders directly with your phone, tablet, or secondary laptop. Transfers happen directly between devices via QR codes with zero cloud servers.
         </div>
       </div>
 
@@ -231,6 +275,11 @@ export default function SettingsPage() {
           isLoading={clearing}
         />
       )}
+
+      <SyncModal
+        isOpen={showSync}
+        onClose={() => setShowSync(false)}
+      />
     </div>
   );
 }

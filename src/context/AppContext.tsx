@@ -112,6 +112,7 @@ interface AppContextValue {
   exportData: () => Promise<void>;
   importData: (file: File) => Promise<void>;
   clearData: () => Promise<void>;
+  reloadAll: () => Promise<void>;
 
   // Onboarding
   isOnboarded: boolean;
@@ -582,6 +583,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     exportData,
     importData,
     clearData,
+    reloadAll: loadAll,
     isOnboarded,
     completeOnboarding,
   };

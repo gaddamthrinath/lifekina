@@ -113,14 +113,29 @@ export interface CalendarReminder {
   createdAt: number;
 }
 
-export interface ExportData {
+export interface SyncPayload {
   version: string;
-  exportedAt: string;
+  timestamp: number;
   transactions: Transaction[];
   categories: Category[];
-  todos?: TodoItem[];
-  notes?: NoteItem[];
-  reminders?: CalendarReminder[];
+  todos: TodoItem[];
+  notes: NoteItem[];
+  reminders: CalendarReminder[];
   settings: Partial<Settings>;
+}
+
+export type ExportData = Partial<SyncPayload> & { exportedAt?: string };
+
+export interface SyncSummary {
+  transactionsAdded: number;
+  transactionsUpdated: number;
+  categoriesAdded: number;
+  todosAdded: number;
+  todosUpdated: number;
+  notesAdded: number;
+  notesUpdated: number;
+  remindersAdded: number;
+  remindersUpdated: number;
+  totalChanges: number;
 }
 
