@@ -11,8 +11,9 @@ interface CalendarHeaderProps {
   onRequestNotif: () => void;
   viewMode: 'month' | 'week';
   onToggleViewMode: (mode: 'month' | 'week') => void;
+  sourceFilter?: 'all' | 'local' | 'imported';
+  onSourceFilterChange?: (source: 'all' | 'local' | 'imported') => void;
 }
-
 
 export default function CalendarHeader({
   currentMonth,
@@ -22,6 +23,8 @@ export default function CalendarHeader({
   onRequestNotif,
   viewMode,
   onToggleViewMode,
+  sourceFilter = 'all',
+  onSourceFilterChange,
 }: CalendarHeaderProps) {
   const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
@@ -38,6 +41,21 @@ export default function CalendarHeader({
       </div>
 
       <div className="cal-controls-group">
+        {/* Source Filter Dropdown */}
+        {onSourceFilterChange && (
+          <select
+            id="calendar-source-filter"
+            className="filter-select-standalone"
+            style={{ minWidth: 160 }}
+            value={sourceFilter}
+            onChange={e => onSourceFilterChange(e.target.value as 'all' | 'local' | 'imported')}
+          >
+            <option value="all">Source: All Records</option>
+            <option value="local">Created on this device</option>
+            <option value="imported">Synced from another device</option>
+          </select>
+        )}
+
         {/* View Mode Selector */}
         <div className="view-mode-toggle">
           <button

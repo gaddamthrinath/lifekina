@@ -5,7 +5,7 @@ import {
   FileText, Plus, Pin, Pencil, Trash2, Search, Tag, X, Check,
   Filter, ChevronLeft, ChevronRight, Eye, Download, Code,
   List, Type, Heading1, Heading2, Heading3, Quote, CheckSquare,
-  FileCode, Clock, ArrowDownToLine, ArrowLeft, Save
+  FileCode, Clock, ArrowDownToLine, ArrowLeft, Save, ArrowLeftRight
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import EmptyState from '@/components/EmptyState';
@@ -227,8 +227,9 @@ export default function NotesPage() {
   const [weekVal, setWeekVal] = useState(currentWeek);
   const [quarterVal, setQuarterVal] = useState(currentQuarter);
 
-  // Search, Tag Filter & Pagination State
+  // Search, Source, Tag Filter & Pagination State
   const [search, setSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'local' | 'imported'>('all');
   const [tagFilter, setTagFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -258,7 +259,7 @@ export default function NotesPage() {
   // Reset pagination on filter change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, tagFilter, periodType, yearVal, monthVal, weekVal, quarterVal]);
+  }, [search, sourceFilter, tagFilter, periodType, yearVal, monthVal, weekVal, quarterVal]);
 
   const allNoteTags = useMemo(() => {
     const tagsSet = new Set<string>();
@@ -268,6 +269,10 @@ export default function NotesPage() {
 
   const filteredNotes = useMemo(() => {
     return notes.filter(n => {
+      // Source Filter
+      if (sourceFilter === 'local' && n.syncOrigin === 'imported') return false;
+      if (sourceFilter === 'imported' && n.syncOrigin !== 'imported') return false;
+
       const d = new Date(n.createdAt);
       if (!isDateInPeriod(d, periodType, yearVal, monthVal, weekVal, quarterVal)) {
         return false;
@@ -285,7 +290,7 @@ export default function NotesPage() {
       }
       return true;
     });
-  }, [notes, periodType, yearVal, monthVal, weekVal, quarterVal, tagFilter, search]);
+  }, [notes, sourceFilter, periodType, yearVal, monthVal, weekVal, quarterVal, tagFilter, search]);
 
   // Pagination for Notes Table
   const totalPages = Math.ceil(filteredNotes.length / ITEMS_PER_PAGE) || 1;
@@ -408,19 +413,19 @@ export default function NotesPage() {
         <div className="notes-editor-full">
           {/* Top Page Action Bar */}
           <div className="notes-editor-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <button className="btn btn-outline btn-sm" onClick={() => setViewMode('list')} style={{ padding: '6px 14px', borderRadius: 6 }}>
+            <div className="notes-editor-nav-left">
+              <button className="btn btn-outline btn-sm" onClick={() => setViewMode('list')} style={{ padding: '6px 12px', borderRadius: 6, gap: 6 }}>
                 <ArrowLeft size={15} /> Back to Notes List
               </button>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--font-heading)' }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--font-heading)' }}>
                 <FileCode size={18} color="var(--brand-dark)" />
-                {isReadOnlyView ? 'View Note Document' : editingNote ? 'Edit Note Page' : 'New Note Page'}
+                <span>{isReadOnlyView ? 'View Note' : editingNote ? 'Edit Note' : 'New Note'}</span>
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="notes-editor-actions">
               {/* Inline Tags Input */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div className="notes-editor-tags-wrap">
                 <Tag size={14} color="var(--text-muted)" />
                 <input
                   type="text"
@@ -429,19 +434,20 @@ export default function NotesPage() {
                   value={tagsInput}
                   readOnly={isReadOnlyView}
                   onChange={e => setTagsInput(e.target.value)}
-                  style={{ fontSize: 12, height: 32, width: 180, borderRadius: 6 }}
+                  style={{ fontSize: 12, height: 32, borderRadius: 6 }}
                 />
               </div>
 
-              {isReadOnlyView && (
+              {isReadOnlyView ? (
                 <button
                   className="btn btn-outline btn-sm"
                   onClick={() => setIsReadOnlyView(false)}
                   style={{ gap: 6, borderRadius: 6 }}
                 >
-                  <Pencil size={14} /> Edit Document
+                  <Pencil size={14} /> Edit
                 </button>
-              )}
+              ) : null}
+
               <button
                 type="button"
                 className="btn btn-outline btn-sm"
@@ -450,8 +456,9 @@ export default function NotesPage() {
               >
                 <ArrowDownToLine size={14} /> Export .md
               </button>
+
               {!isReadOnlyView && (
-                <button className="btn btn-primary btn-sm" onClick={handleSaveNote} disabled={saving} style={{ gap: 6, padding: '6px 18px', borderRadius: 6 }}>
+                <button className="btn btn-primary btn-sm" onClick={handleSaveNote} disabled={saving} style={{ gap: 6, padding: '6px 16px', borderRadius: 6 }}>
                   <Save size={14} /> {saving ? 'Saving...' : 'Save Document'}
                 </button>
               )}
@@ -488,7 +495,7 @@ export default function NotesPage() {
           </div>
         </div>
       ) : (
-        /* TABLE LIST VIEW FOR VAULT NOTES */
+        /* TABLE & CARDS LIST VIEW FOR VAULT NOTES */
         <div style={{ width: '100%' }}>
           {/* Page Header */}
           <div className="pg-header" style={{ marginBottom: 16 }}>
@@ -496,156 +503,162 @@ export default function NotesPage() {
               <h1 className="pg-title" style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <FileCode size={22} color="var(--brand-dark)" /> Personal Notes
               </h1>
-
             </div>
             <button className="btn btn-primary" onClick={openCreateEditor} style={{ borderRadius: 6 }}>
               <Plus size={16} /> New Note Page
             </button>
           </div>
 
-          {/* Period Filter Bar (Unchanged - Dashboard aligned) */}
-          <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Filter size={13} /> Period:
-              </span>
-              {[
-                { key: 'monthly', label: 'Monthly' },
-                { key: 'weekly', label: 'Weekly' },
-                { key: 'quarterly', label: 'Quarterly' },
-                { key: 'yearly', label: 'Yearly' },
-              ].map(p => (
-                <button
-                  key={p.key}
-                  type="button"
-                  onClick={() => setPeriodType(p.key as PeriodType)}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: 4,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    background: periodType === p.key ? 'var(--brand-dark)' : '#ffffff',
-                    color: periodType === p.key ? '#ffffff' : 'var(--text-sub)',
-                    border: `1px solid ${periodType === p.key ? 'var(--brand-dark)' : 'var(--border-light)'}`,
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
+          {/* Unified Filters Card */}
+          <div className="filter-bar-card">
+            {/* Row 1: Period Selection */}
+            <div className="filter-bar-row">
+              <div className="filter-bar-group">
+                <span className="filter-control-label">
+                  <Filter size={13} /> Period:
+                </span>
+                <div className="period-segmented-wrap">
+                  {[
+                    { key: 'monthly', label: 'Monthly' },
+                    { key: 'weekly', label: 'Weekly' },
+                    { key: 'quarterly', label: 'Quarterly' },
+                    { key: 'yearly', label: 'Yearly' },
+                  ].map(p => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => setPeriodType(p.key as PeriodType)}
+                      className={`period-pill-btn ${periodType === p.key ? 'active' : ''}`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="filter-bar-group">
+                {/* Year Selector */}
+                <div className="filter-control-wrap">
+                  <span className="filter-control-label">Year:</span>
+                  <select
+                    className="filter-control-select"
+                    value={yearVal}
+                    onChange={e => setYearVal(Number(e.target.value))}
+                  >
+                    {yearsList.map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Month Selector */}
+                {periodType === 'monthly' && (
+                  <div className="filter-control-wrap">
+                    <span className="filter-control-label">Month:</span>
+                    <select
+                      className="filter-control-select"
+                      value={monthVal}
+                      onChange={e => setMonthVal(Number(e.target.value))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                        <option key={m} value={m}>
+                          {new Date(2000, m - 1).toLocaleDateString('en-US', { month: 'short' })}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Week Selector */}
+                {periodType === 'weekly' && (
+                  <div className="filter-control-wrap">
+                    <span className="filter-control-label">Week:</span>
+                    <select
+                      className="filter-control-select"
+                      value={weekVal}
+                      onChange={e => setWeekVal(Number(e.target.value))}
+                    >
+                      {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
+                        <option key={w} value={w}>Week {w}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Quarter Selector */}
+                {periodType === 'quarterly' && (
+                  <div className="filter-control-wrap">
+                    <span className="filter-control-label">Quarter:</span>
+                    <select
+                      className="filter-control-select"
+                      value={quarterVal}
+                      onChange={e => setQuarterVal(Number(e.target.value))}
+                    >
+                      <option value={1}>Q1 (Jan-Mar)</option>
+                      <option value={2}>Q2 (Apr-Jun)</option>
+                      <option value={3}>Q3 (Jul-Sep)</option>
+                      <option value={4}>Q4 (Oct-Dec)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              {/* Year Selector */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Year:</span>
+            {/* Divider */}
+            <div className="filter-bar-divider" />
+
+            {/* Row 2: Search, Source & Tags */}
+            <div className="filter-bar-row">
+              <div className="filter-search-box">
+                <Search size={15} className="search-ico" />
+                <input
+                  type="text"
+                  className="filter-search-input"
+                  placeholder="Search notes by title, markdown content, or tags..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="filter-bar-group">
+                {/* Source Filter */}
                 <select
-                  className="fi"
-                  value={yearVal}
-                  onChange={e => setYearVal(Number(e.target.value))}
-                  style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 85 }}
+                  id="notes-source-filter"
+                  className="filter-select-standalone"
+                  style={{ minWidth: 165 }}
+                  value={sourceFilter}
+                  onChange={e => setSourceFilter(e.target.value as 'all' | 'local' | 'imported')}
                 >
-                  {yearsList.map(y => (
-                    <option key={y} value={y}>{y}</option>
+                  <option value="all">Source: All Records</option>
+                  <option value="local">Created on this device</option>
+                  <option value="imported">Synced from another device</option>
+                </select>
+
+                {/* Tag Filter */}
+                <select
+                  className="filter-select-standalone"
+                  value={tagFilter}
+                  onChange={e => setTagFilter(e.target.value)}
+                  style={{ minWidth: 130 }}
+                >
+                  <option value="all">All Tags ({notes.length})</option>
+                  {allNoteTags.map(t => (
+                    <option key={t} value={t}>#{t}</option>
                   ))}
                 </select>
               </div>
-
-              {/* Month Selector */}
-              {periodType === 'monthly' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Month:</span>
-                  <select
-                    className="fi"
-                    value={monthVal}
-                    onChange={e => setMonthVal(Number(e.target.value))}
-                    style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 110 }}
-                  >
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                      <option key={m} value={m}>
-                        {new Date(2000, m - 1).toLocaleDateString('en-US', { month: 'short' })}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Week Selector */}
-              {periodType === 'weekly' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Week:</span>
-                  <select
-                    className="fi"
-                    value={weekVal}
-                    onChange={e => setWeekVal(Number(e.target.value))}
-                    style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 95 }}
-                  >
-                    {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
-                      <option key={w} value={w}>Week {w}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Quarter Selector */}
-              {periodType === 'quarterly' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Quarter:</span>
-                  <select
-                    className="fi"
-                    value={quarterVal}
-                    onChange={e => setQuarterVal(Number(e.target.value))}
-                    style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 85 }}
-                  >
-                    <option value={1}>Q1 (Jan-Mar)</option>
-                    <option value={2}>Q2 (Apr-Jun)</option>
-                    <option value={3}>Q3 (Jul-Sep)</option>
-                    <option value={4}>Q4 (Oct-Dec)</option>
-                  </select>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Search & Tag Filter Toolbar */}
-          <div style={{ background: '#ffffff', borderRadius: 8, padding: '12px 16px', border: '1px solid var(--border-light)', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ position: 'relative', flex: '1 1 300px' }}>
-              <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
-              <input
-                type="text"
-                className="fi"
-                placeholder="Search notes by title, markdown content, or tags..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{ paddingLeft: 32, borderRadius: 6, fontSize: 13 }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Tag Filter:</span>
-              <select
-                className="fi"
-                value={tagFilter}
-                onChange={e => setTagFilter(e.target.value)}
-                style={{ fontSize: 12, height: 34, minWidth: 130 }}
-              >
-                <option value="all">All Tags ({notes.length})</option>
-                {allNoteTags.map(t => (
-                  <option key={t} value={t}>#{t}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* ELEGANT TABLE VIEW FOR NOTES */}
+          {/* LIST VIEW (TABLE ON DESKTOP, COMFORTABLE CARDS ON MOBILE/TABLET) */}
           {filteredNotes.length === 0 ? (
             <div className="card">
               <EmptyState
                 icon={<FileText size={24} />}
-                title={search ? 'No notes match your search' : 'No notes found for selected period'}
-                description={search ? 'Try adjusting your search query or tag filter.' : 'Click "+ New Note Page" above to create your first markdown document.'}
+                title={search || sourceFilter !== 'all' || tagFilter !== 'all' ? 'No notes match your filters' : 'No notes found for selected period'}
+                description={search || sourceFilter !== 'all' || tagFilter !== 'all' ? 'Try adjusting your search query, source, or tag filter.' : 'Click "+ New Note Page" above to create your first markdown document.'}
                 action={
-                  !search ? (
+                  !search && sourceFilter === 'all' && tagFilter === 'all' ? (
                     <button className="btn btn-primary" onClick={openCreateEditor}>
                       <Plus size={15} /> New Note Page
                     </button>
@@ -655,7 +668,8 @@ export default function NotesPage() {
             </div>
           ) : (
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
+              {/* Desktop Table View (>= 769px) */}
+              <div className="desktop-notes-table" style={{ overflowX: 'auto' }}>
                 <table className="tbl" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-light)' }}>
@@ -667,65 +681,172 @@ export default function NotesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedNotes.map((n, idx) => (
-                      <tr
-                        key={n.id}
-                        className={idx % 2 === 1 ? 'tbl-row-striped' : ''}
-                        style={{ borderBottom: '1px solid var(--border-light)' }}
-                      >
-                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                          <button className="ibtn" onClick={() => togglePinNote(n.id)} title={n.isPinned ? 'Unpin Note' : 'Pin Note'}>
-                            <Pin size={14} color={n.isPinned ? 'var(--brand-dark)' : 'var(--text-light)'} fill={n.isPinned ? 'var(--brand-dark)' : 'none'} />
-                          </button>
-                        </td>
+                    {paginatedNotes.map((n, idx) => {
+                      const isSynced = n.syncOrigin === 'imported';
 
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-main)', marginBottom: 3 }}>
-                            {n.title}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                            {n.content.replace(/[#*`>-]/g, '').trim()}
-                          </div>
-                        </td>
+                      return (
+                        <tr
+                          key={n.id}
+                          className={idx % 2 === 1 ? 'tbl-row-striped' : ''}
+                          style={{ borderBottom: '1px solid var(--border-light)' }}
+                        >
+                          <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                            <button className="ibtn" onClick={() => togglePinNote(n.id)} title={n.isPinned ? 'Unpin Note' : 'Pin Note'}>
+                              <Pin size={14} color={n.isPinned ? 'var(--brand-dark)' : 'var(--text-light)'} fill={n.isPinned ? 'var(--brand-dark)' : 'none'} />
+                            </button>
+                          </td>
 
-                        <td style={{ padding: '12px 16px' }}>
-                          {n.tags && n.tags.length > 0 ? (
-                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                              {n.tags.map(t => (
-                                <span key={t} style={{ fontSize: 10.5, fontWeight: 700, background: '#f1f5f9', color: 'var(--brand-dark)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-light)' }}>
-                                  #{t}
+                          <td style={{ padding: '12px 16px' }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-main)', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span>{n.title}</span>
+                              {isSynced && (
+                                <span
+                                  title="Synced from another device"
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    background: 'var(--brand-light)',
+                                    color: 'var(--brand-dark)',
+                                    padding: '1px 6px',
+                                    borderRadius: 'var(--r-full)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3,
+                                  }}
+                                >
+                                  <ArrowLeftRight size={10} /> Synced
                                 </span>
-                              ))}
+                              )}
                             </div>
-                          ) : (
-                            <span style={{ fontSize: 12, color: 'var(--text-light)' }}>—</span>
-                          )}
-                        </td>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                              {n.content.replace(/[#*`>-]/g, '').trim()}
+                            </div>
+                          </td>
 
-                        <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                          {formatDate(n.createdAt)}
-                        </td>
+                          <td style={{ padding: '12px 16px' }}>
+                            {n.tags && n.tags.length > 0 ? (
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                {n.tags.map(t => (
+                                  <span key={t} style={{ fontSize: 10.5, fontWeight: 700, background: '#f1f5f9', color: 'var(--brand-dark)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-light)' }}>
+                                    #{t}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: 12, color: 'var(--text-light)' }}>—</span>
+                            )}
+                          </td>
 
-                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                            <button className="ibtn" onClick={() => exportNoteAsMarkdown(n)} title="Export .md File">
+                          <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                            {formatDate(n.createdAt)}
+                          </td>
+
+                          <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                              <button className="ibtn" onClick={() => exportNoteAsMarkdown(n)} title="Export .md File">
+                                <Download size={14} color="var(--brand-dark)" />
+                              </button>
+                              <button className="ibtn" onClick={() => openViewEditor(n)} title="View Note Page">
+                                <Eye size={14} />
+                              </button>
+                              <button className="ibtn" onClick={() => openEditEditor(n)} title="Edit Note Page">
+                                <Pencil size={14} />
+                              </button>
+                              <button className="ibtn" style={{ color: '#dc2626' }} onClick={() => setDelId(n.id)} title="Delete Note">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile & Tablet Card Grid View (<= 768px) */}
+              <div className="mobile-notes-cards" style={{ padding: '14px' }}>
+                <div className="notes-card-grid">
+                  {paginatedNotes.map(n => {
+                    const isSynced = n.syncOrigin === 'imported';
+
+                    return (
+                      <div key={n.id} className="note-card-item">
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-main)' }}>
+                              {n.title}
+                            </span>
+                            {isSynced && (
+                              <span
+                                title="Synced from another device"
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  background: 'var(--brand-light)',
+                                  color: 'var(--brand-dark)',
+                                  padding: '1px 6px',
+                                  borderRadius: 'var(--r-full)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                }}
+                              >
+                                <ArrowLeftRight size={10} /> Synced
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            className="ibtn"
+                            onClick={() => togglePinNote(n.id)}
+                            title={n.isPinned ? 'Unpin Note' : 'Pin Note'}
+                            style={{ padding: 4, flexShrink: 0 }}
+                          >
+                            <Pin
+                              size={15}
+                              color={n.isPinned ? 'var(--brand-dark)' : 'var(--text-light)'}
+                              fill={n.isPinned ? 'var(--brand-dark)' : 'none'}
+                            />
+                          </button>
+                        </div>
+
+                        <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, margin: '2px 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {n.content.replace(/[#*`>-]/g, '').trim() || 'No additional content'}
+                        </p>
+
+                        {n.tags && n.tags.length > 0 && (
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
+                            {n.tags.map(t => (
+                              <span key={t} style={{ fontSize: 10.5, fontWeight: 700, background: '#f1f5f9', color: 'var(--brand-dark)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-light)' }}>
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-light)', paddingTop: 8, marginTop: 4 }}>
+                          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                            {formatDate(n.createdAt)}
+                          </span>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="ibtn" onClick={() => exportNoteAsMarkdown(n)} title="Export .md File" style={{ padding: 4 }}>
                               <Download size={14} color="var(--brand-dark)" />
                             </button>
-                            <button className="ibtn" onClick={() => openViewEditor(n)} title="View Note Page">
+                            <button className="ibtn" onClick={() => openViewEditor(n)} title="View Note Page" style={{ padding: 4 }}>
                               <Eye size={14} />
                             </button>
-                            <button className="ibtn" onClick={() => openEditEditor(n)} title="Edit Note Page">
+                            <button className="ibtn" onClick={() => openEditEditor(n)} title="Edit Note Page" style={{ padding: 4 }}>
                               <Pencil size={14} />
                             </button>
-                            <button className="ibtn" style={{ color: '#dc2626' }} onClick={() => setDelId(n.id)} title="Delete Note">
+                            <button className="ibtn" style={{ color: '#dc2626', padding: 4 }} onClick={() => setDelId(n.id)} title="Delete Note">
                               <Trash2 size={14} />
                             </button>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Table Pagination Footer */}

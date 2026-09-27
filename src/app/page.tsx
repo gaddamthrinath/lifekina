@@ -6,12 +6,14 @@ import {
   Sparkles, ShieldCheck, ArrowRight, Lock, Database,
   WifiOff, KeyRound, Receipt, CheckSquare, FileText,
   Calendar, ChevronDown, CheckCircle2, XCircle,
-  Bell
+  Bell, Download
 } from 'lucide-react';
+import PWAInstallPrompt, { usePWAInstall } from '@/components/PWAInstallPrompt';
 
 export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<'expenses' | 'tasks' | 'notes' | 'calendar'>('expenses');
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const { isStandalone, triggerInstall } = usePWAInstall();
 
   const toggleFaq = (index: number) => {
     setOpenFaq(openFaq === index ? null : index);
@@ -84,6 +86,17 @@ export default function LandingPage() {
           <Link href="/dashboard" className="lp-btn-primary">
             Launch Workspace <ArrowRight size={16} />
           </Link>
+          {!isStandalone && (
+            <button
+              type="button"
+              onClick={() => triggerInstall()}
+              className="lp-btn-outline"
+              style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            >
+              <Download size={15} color="var(--brand-dark)" />
+              <span>Install Desktop / Mobile App</span>
+            </button>
+          )}
           <a href="#features" className="lp-btn-outline">
             Explore Capabilities
           </a>
@@ -114,29 +127,23 @@ export default function LandingPage() {
       <div className="lp-preview-container">
         <div className="lp-mockup-window">
           <div className="lp-mockup-bar">
-            <div className="lp-mockup-dots">
-              <span className="lp-mockup-dot red" />
-              <span className="lp-mockup-dot yellow" />
-              <span className="lp-mockup-dot green" />
+            <div className="lp-mockup-bar-left">
+              <div className="lp-mockup-dots">
+                <span className="lp-mockup-dot red" />
+                <span className="lp-mockup-dot yellow" />
+                <span className="lp-mockup-dot green" />
+              </div>
+              <div className="lp-mockup-title">
+                <ShieldCheck size={13} color="#10b981" /> lifekina.local — Private Daily Workspace
+              </div>
             </div>
-            <div className="lp-mockup-title">
-              <ShieldCheck size={13} color="#10b981" /> lifekina.local — Private Daily Workspace
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div className="lp-mockup-tabs">
               {(['expenses', 'tasks', 'notes', 'calendar'] as const).map((tab) => (
                 <button
                   key={tab}
+                  type="button"
                   onClick={() => setActiveTab(tab)}
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: '4px 10px',
-                    borderRadius: 6,
-                    background: activeTab === tab ? '#0f172a' : '#ffffff',
-                    color: activeTab === tab ? '#ffffff' : '#64748b',
-                    border: '1px solid #cbd5e1',
-                    textTransform: 'capitalize',
-                  }}
+                  className={`lp-mockup-tab-btn ${activeTab === tab ? 'active' : ''}`}
                 >
                   {tab}
                 </button>
@@ -174,11 +181,11 @@ export default function LandingPage() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>☕ Morning Coffee</span>
+                      <span>Morning Coffee</span>
                       <strong style={{ color: '#0f172a' }}>$4.50</strong>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>🛒 Weekly Market</span>
+                      <span>Weekly Market</span>
                       <strong style={{ color: '#0f172a' }}>$84.20</strong>
                     </div>
                   </div>
@@ -227,9 +234,9 @@ export default function LandingPage() {
 
             {activeTab === 'notes' && (
               <div className="lp-mockup-grid">
-                <div className="lp-mockup-card" style={{ gridColumn: 'span 2' }}>
+                <div className="lp-mockup-card lp-mockup-card-wide">
                   <div className="lp-mockup-card-head">
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>📌 Weekly Plan &amp; Objectives</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Weekly Plan &amp; Objectives</span>
                     <span className="lp-mockup-tag" style={{ background: '#ecfdf5', color: '#059669' }}>Pinned</span>
                   </div>
                   <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.6 }}>
@@ -264,7 +271,7 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div className="lp-mockup-card" style={{ gridColumn: 'span 2' }}>
+                <div className="lp-mockup-card lp-mockup-card-wide">
                   <div className="lp-mockup-card-head">
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Native Notifications</span>
                     <span className="lp-mockup-tag" style={{ background: '#ecfdf5', color: '#059669' }}>Audio &amp; Push</span>
@@ -432,27 +439,27 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }}>
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '28px 24px' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#10b981', marginBottom: 12 }}>01</div>
-            <h3 style={{ fontSize: 17, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>Open the App</h3>
-            <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>
+        <div className="lp-steps-grid">
+          <div className="lp-step-card">
+            <div className="lp-step-num">01</div>
+            <h3 className="lp-step-title">Open the App</h3>
+            <p className="lp-step-desc">
               Click Launch Workspace to start. The app loads instantly into your browser without an account.
             </p>
           </div>
 
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '28px 24px' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#10b981', marginBottom: 12 }}>02</div>
-            <h3 style={{ fontSize: 17, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>Choose Your Currency</h3>
-            <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>
+          <div className="lp-step-card">
+            <div className="lp-step-num">02</div>
+            <h3 className="lp-step-title">Choose Your Currency</h3>
+            <p className="lp-step-desc">
               Select your currency code and preferred date format. Default categories are populated automatically.
             </p>
           </div>
 
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '28px 24px' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#10b981', marginBottom: 12 }}>03</div>
-            <h3 style={{ fontSize: 17, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>Enjoy Total Privacy</h3>
-            <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>
+          <div className="lp-step-card">
+            <div className="lp-step-num">03</div>
+            <h3 className="lp-step-title">Enjoy Total Privacy</h3>
+            <p className="lp-step-desc">
               Track daily expenses, manage tasks, and set reminders knowing everything stays on your machine.
             </p>
           </div>
@@ -538,6 +545,10 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* Interactive PWA Install Prompt Banner & Guide Modal */}
+      <PWAInstallPrompt />
     </div>
   );
 }
+

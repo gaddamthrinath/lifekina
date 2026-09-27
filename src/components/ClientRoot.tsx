@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import AppShell from './AppShell';
-import { Leaf } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { checkAndDispatchReminders } from '@/lib/notification';
 
 export default function ClientRoot({ children }: { children: React.ReactNode }) {
@@ -37,12 +37,17 @@ export default function ClientRoot({ children }: { children: React.ReactNode }) 
 
   if (isLoading) {
     return (
-      <div className="loading-screen">
-        <div style={{ width: 40, height: 40, background: 'var(--brand)', borderRadius: 'var(--r)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
-          <Leaf size={18} color="#fff" strokeWidth={2.5} />
+      <div className="loading-screen" role="status" aria-label="Loading workspace">
+        <div className="loading-logo-box">
+          <Sparkles size={24} color="#fff" strokeWidth={2.5} />
+        </div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'var(--text-main)', letterSpacing: '-0.3px' }}>
+          Lifekina
         </div>
         <div className="spinner" />
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Opening your private workspace…</span>
+        <span style={{ fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 500 }}>
+          Opening your private workspace...
+        </span>
       </div>
     );
   }
@@ -50,4 +55,5 @@ export default function ClientRoot({ children }: { children: React.ReactNode }) 
   if (pathname === '/' || !isOnboarded) return <>{children}</>;
   return <AppShell>{children}</AppShell>;
 }
+
 

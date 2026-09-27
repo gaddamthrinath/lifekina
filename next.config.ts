@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
     'lifekina.stagezone.live',
     '*.stagezone.live',
     'localhost:3000',
+    "192.168.1.14",
+    "3bc9-27-6-161-57.ngrok-free.app"
   ],
   // With a custom domain (lifekina.stagezone.live), the site is served from the root domain "/"
   basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',

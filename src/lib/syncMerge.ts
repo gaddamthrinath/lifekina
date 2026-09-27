@@ -1,10 +1,39 @@
 import { getDB } from './db';
-import { SyncPayload, SyncSummary, Transaction, Category, TodoItem, NoteItem, CalendarReminder } from './types';
+import {
+  SyncPayload,
+  SyncSummary,
+  ExportedSyncStats,
+  Transaction,
+  Category,
+  TodoItem,
+  NoteItem,
+  CalendarReminder,
+} from './types';
+
+/**
+ * Calculates total count of records being exported
+ */
+export function getExportStatsFromPayload(payload: SyncPayload): ExportedSyncStats {
+  const transactionsCount = payload.transactions?.length || 0;
+  const categoriesCount = payload.categories?.length || 0;
+  const todosCount = payload.todos?.length || 0;
+  const notesCount = payload.notes?.length || 0;
+  const remindersCount = payload.reminders?.length || 0;
+
+  return {
+    transactionsCount,
+    categoriesCount,
+    todosCount,
+    notesCount,
+    remindersCount,
+    totalCount: transactionsCount + categoriesCount + todosCount + notesCount + remindersCount,
+  };
+}
 
 /**
  * Builds the complete local sync payload from IndexedDB
  */
-export async function getLocalSyncPayload(): Promise<SyncPayload> {
+export async function getLocalSyncPayload(): Promise<{ payload: SyncPayload; stats: ExportedSyncStats }> {
   const db = await getDB();
   const transactions = await db.getAll('transactions');
   const categories = await db.getAll('categories');
@@ -12,13 +41,13 @@ export async function getLocalSyncPayload(): Promise<SyncPayload> {
   const notes = await db.getAll('notes');
   const reminders = await db.getAll('reminders');
   const settingsRaw = await db.getAll('settings');
-  
+
   const settings: Record<string, unknown> = {};
   for (const s of settingsRaw) {
     settings[s.key] = s.value;
   }
 
-  return {
+  const payload: SyncPayload = {
     version: '4.0.0',
     timestamp: Date.now(),
     transactions: transactions || [],
@@ -28,14 +57,20 @@ export async function getLocalSyncPayload(): Promise<SyncPayload> {
     reminders: reminders || [],
     settings,
   };
+
+  const stats = getExportStatsFromPayload(payload);
+
+  return { payload, stats };
 }
 
 /**
  * Merges a remote SyncPayload into local IndexedDB without destroying local data.
- * Applies intelligent conflict resolution (Last-Write-Wins based on timestamps & IDs).
+ * Applies intelligent conflict resolution and tags imported items with syncOrigin: 'imported'.
  */
 export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<SyncSummary> {
   const db = await getDB();
+  const syncTimestamp = Date.now();
+
   const summary: SyncSummary = {
     transactionsAdded: 0,
     transactionsUpdated: 0,
@@ -52,7 +87,8 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
   const stores = ['transactions', 'categories', 'settings', 'todos', 'notes', 'reminders'] as const;
   const tx = db.transaction(stores, 'readwrite');
 
-  // 1. Merge Categories
+  // 1. Merge Categories & Build Remap Dictionary
+  const categoryRemap = new Map<string, string>();
   if (Array.isArray(incoming.categories)) {
     const catStore = tx.objectStore('categories');
     const localCategories = await catStore.getAll();
@@ -64,21 +100,37 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
       const existingById = localCatMap.get(remoteCat.id);
       const existingByName = localCatByName.get(remoteCat.name.toLowerCase().trim());
 
-      if (!existingById && !existingByName) {
-        await catStore.put(remoteCat);
-        localCatMap.set(remoteCat.id, remoteCat);
-        localCatByName.set(remoteCat.name.toLowerCase().trim(), remoteCat);
-        summary.categoriesAdded++;
-      } else if (existingById && (existingById.name !== remoteCat.name || existingById.color !== remoteCat.color || existingById.icon !== remoteCat.icon)) {
-        // Update if remote is newer
-        if ((remoteCat.createdAt || 0) >= (existingById.createdAt || 0)) {
-          await catStore.put(remoteCat);
+      if (existingById) {
+        categoryRemap.set(remoteCat.id, existingById.id);
+        if (existingById.name !== remoteCat.name || existingById.color !== remoteCat.color || existingById.icon !== remoteCat.icon) {
+          if ((remoteCat.createdAt || 0) >= (existingById.createdAt || 0)) {
+            await catStore.put({
+              ...remoteCat,
+              syncOrigin: 'imported',
+              syncedAt: syncTimestamp,
+            });
+          }
         }
+      } else if (existingByName) {
+        // Map remote category ID to matching local category ID
+        categoryRemap.set(remoteCat.id, existingByName.id);
+      } else {
+        // Save new custom category locally
+        const itemToSave: Category = {
+          ...remoteCat,
+          syncOrigin: 'imported',
+          syncedAt: syncTimestamp,
+        };
+        await catStore.put(itemToSave);
+        localCatMap.set(remoteCat.id, itemToSave);
+        localCatByName.set(remoteCat.name.toLowerCase().trim(), itemToSave);
+        categoryRemap.set(remoteCat.id, remoteCat.id);
+        summary.categoriesAdded++;
       }
     }
   }
 
-  // 2. Merge Transactions
+  // 2. Merge Transactions with resolved Category IDs
   if (Array.isArray(incoming.transactions)) {
     const txStore = tx.objectStore('transactions');
     const localTransactions = await txStore.getAll();
@@ -86,23 +138,34 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
 
     for (const remoteTx of incoming.transactions) {
       if (!remoteTx?.id) continue;
+      const resolvedCategoryId = categoryRemap.get(remoteTx.categoryId) || remoteTx.categoryId;
       const local = localTxMap.get(remoteTx.id);
       if (!local) {
-        await txStore.put(remoteTx);
-        localTxMap.set(remoteTx.id, remoteTx);
+        const itemToSave: Transaction = {
+          ...remoteTx,
+          categoryId: resolvedCategoryId,
+          syncOrigin: 'imported',
+          syncedAt: syncTimestamp,
+        };
+        await txStore.put(itemToSave);
+        localTxMap.set(remoteTx.id, itemToSave);
         summary.transactionsAdded++;
       } else {
-        // If modified or higher timestamp, update
         const hasDiff =
           local.amount !== remoteTx.amount ||
-          local.categoryId !== remoteTx.categoryId ||
+          local.categoryId !== resolvedCategoryId ||
           local.description !== remoteTx.description ||
           local.note !== remoteTx.note ||
           local.date !== remoteTx.date ||
           local.time !== remoteTx.time;
 
         if (hasDiff && (remoteTx.createdAt || 0) >= (local.createdAt || 0)) {
-          await txStore.put(remoteTx);
+          await txStore.put({
+            ...remoteTx,
+            categoryId: resolvedCategoryId,
+            syncOrigin: 'imported',
+            syncedAt: syncTimestamp,
+          });
           summary.transactionsUpdated++;
         }
       }
@@ -119,8 +182,13 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
       if (!remoteTodo?.id) continue;
       const local = localTodoMap.get(remoteTodo.id);
       if (!local) {
-        await todoStore.put(remoteTodo);
-        localTodoMap.set(remoteTodo.id, remoteTodo);
+        const itemToSave: TodoItem = {
+          ...remoteTodo,
+          syncOrigin: 'imported',
+          syncedAt: syncTimestamp,
+        };
+        await todoStore.put(itemToSave);
+        localTodoMap.set(remoteTodo.id, itemToSave);
         summary.todosAdded++;
       } else {
         const localScore = (local.completedAt || local.inProgressAt || local.createdAt || 0) + (local.timeline?.length || 0);
@@ -135,7 +203,11 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
           local.dueDate !== remoteTodo.dueDate;
 
         if (hasDiff && remoteScore >= localScore) {
-          await todoStore.put(remoteTodo);
+          await todoStore.put({
+            ...remoteTodo,
+            syncOrigin: 'imported',
+            syncedAt: syncTimestamp,
+          });
           summary.todosUpdated++;
         }
       }
@@ -152,8 +224,13 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
       if (!remoteNote?.id) continue;
       const local = localNoteMap.get(remoteNote.id);
       if (!local) {
-        await noteStore.put(remoteNote);
-        localNoteMap.set(remoteNote.id, remoteNote);
+        const itemToSave: NoteItem = {
+          ...remoteNote,
+          syncOrigin: 'imported',
+          syncedAt: syncTimestamp,
+        };
+        await noteStore.put(itemToSave);
+        localNoteMap.set(remoteNote.id, itemToSave);
         summary.notesAdded++;
       } else {
         const remoteTime = remoteNote.updatedAt || remoteNote.createdAt || 0;
@@ -167,7 +244,11 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
           JSON.stringify(local.tags) !== JSON.stringify(remoteNote.tags);
 
         if (hasDiff && remoteTime >= localTime) {
-          await noteStore.put(remoteNote);
+          await noteStore.put({
+            ...remoteNote,
+            syncOrigin: 'imported',
+            syncedAt: syncTimestamp,
+          });
           summary.notesUpdated++;
         }
       }
@@ -184,8 +265,13 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
       if (!remoteReminder?.id) continue;
       const local = localReminderMap.get(remoteReminder.id);
       if (!local) {
-        await reminderStore.put(remoteReminder);
-        localReminderMap.set(remoteReminder.id, remoteReminder);
+        const itemToSave: CalendarReminder = {
+          ...remoteReminder,
+          syncOrigin: 'imported',
+          syncedAt: syncTimestamp,
+        };
+        await reminderStore.put(itemToSave);
+        localReminderMap.set(remoteReminder.id, itemToSave);
         summary.remindersAdded++;
       } else {
         const remoteTime = remoteReminder.createdAt || 0;
@@ -200,20 +286,25 @@ export async function mergeRemoteSyncPayload(incoming: SyncPayload): Promise<Syn
           local.priority !== remoteReminder.priority;
 
         if (hasDiff && remoteTime >= localTime) {
-          await reminderStore.put(remoteReminder);
+          await reminderStore.put({
+            ...remoteReminder,
+            syncOrigin: 'imported',
+            syncedAt: syncTimestamp,
+          });
           summary.remindersUpdated++;
         }
       }
     }
   }
 
-  // 6. Merge Settings (Keep local preferences if already set, but fill onboarding if missing)
+  // 6. Merge Settings
   if (incoming.settings && typeof incoming.settings === 'object') {
     const settingsStore = tx.objectStore('settings');
     const localSettingsRaw = await settingsStore.getAll();
     const localSettingsMap = new Map<string, unknown>(localSettingsRaw.map(s => [s.key, s.value]));
 
     for (const [key, value] of Object.entries(incoming.settings)) {
+      if (key === 'sync_history') continue; // Do not overwrite local sync history
       if (!localSettingsMap.has(key) || localSettingsMap.get(key) === undefined || localSettingsMap.get(key) === null) {
         await settingsStore.put({ key, value });
       }

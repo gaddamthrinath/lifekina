@@ -1,6 +1,15 @@
 import LZString from 'lz-string';
-import { SyncPayload, SyncSummary } from './types';
+import { SyncPayload, SyncSummary, ExportedSyncStats, SyncResult } from './types';
 import { getLocalSyncPayload, mergeRemoteSyncPayload } from './syncMerge';
+import { recordSyncHistory } from './syncHistory';
+import {
+  generateRoomId,
+  generateSyncSecretKey,
+  importSyncSecretKey,
+  encryptPayload,
+  decryptPayload,
+} from './crypto';
+import { startMqttHostSignaling, startMqttJoinerSignaling } from './mqttSignaling';
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
@@ -12,49 +21,22 @@ const RTC_CONFIG: RTCConfiguration = {
   iceCandidatePoolSize: 10,
 };
 
-const SIGNAL_PREFIX = 'PL1:';
+const PROTOCOL_1SCAN_PREFIX = 'PL2:';
 const CHUNK_SIZE = 16 * 1024; // 16 KB safe chunk size for RTCDataChannel
 
 export interface SyncProgressInfo {
-  stage: 'idle' | 'generating_offer' | 'waiting_answer' | 'connecting' | 'transferring' | 'merging' | 'completed' | 'error';
+  stage:
+    | 'idle'
+    | 'generating_offer'
+    | 'connecting_relay'
+    | 'waiting_scan'
+    | 'connecting_p2p'
+    | 'transferring'
+    | 'merging'
+    | 'completed'
+    | 'error';
   message: string;
-  bytesTransferred?: number;
-  totalBytes?: number;
-  summary?: SyncSummary;
-}
-
-/**
- * Encodes SDP into an ultra-compact URL-safe Base64 string for QR codes
- */
-export function encodeSignalData(obj: RTCSessionDescriptionInit): string {
-  const raw = JSON.stringify({ t: obj.type, s: obj.sdp });
-  const compressed = LZString.compressToEncodedURIComponent(raw);
-  return `${SIGNAL_PREFIX}${compressed}`;
-}
-
-/**
- * Decodes compressed signal data from QR code or text
- */
-export function decodeSignalData(code: string): RTCSessionDescriptionInit {
-  const clean = code.trim();
-  const payload = clean.startsWith(SIGNAL_PREFIX) ? clean.slice(SIGNAL_PREFIX.length) : clean;
-  const decompressed = LZString.decompressFromEncodedURIComponent(payload);
-  if (!decompressed) {
-    // Try raw JSON parse if uncompressed fallback
-    try {
-      const parsed = JSON.parse(clean);
-      if (parsed.type && parsed.sdp) return parsed;
-    } catch {
-      // ignore
-    }
-    throw new Error('Invalid QR or Sync Code format.');
-  }
-
-  const parsed = JSON.parse(decompressed);
-  return {
-    type: parsed.t,
-    sdp: parsed.s,
-  };
+  result?: SyncResult;
 }
 
 /**
@@ -147,21 +129,38 @@ export interface P2PSyncSession {
 }
 
 /**
- * Step 1 (Host): Creates the WebRTC PeerConnection, DataChannel, Offer, and returns the QR code string.
+ * Step 1 (Host / Initiator): Generates single-use session, publishes offer, displays 1 QR code
  */
-export async function createHostOffer(): Promise<{
-  offerCode: string;
+export async function create1ScanHostSession(
+  onProgress: (info: SyncProgressInfo) => void
+): Promise<{
+  qrPayload: string;
   session: P2PSyncSession;
-  completeWithAnswer: (answerCode: string, onProgress: (info: SyncProgressInfo) => void) => Promise<SyncSummary>;
+  syncPromise: Promise<SyncResult>;
 }> {
+  onProgress({ stage: 'generating_offer', message: 'Preparing secure sync session...' });
+
+  const roomId = generateRoomId();
+  const { key: aesKey, keyString } = await generateSyncSecretKey();
+
   const pc = new RTCPeerConnection(RTC_CONFIG);
   const channel = pc.createDataChannel('lifekina-p2p-sync', { ordered: true });
   const receiver = new ChunkReceiver();
+  let mqttHandle: { close: () => void } | null = null;
+  let localExportStats: ExportedSyncStats = {
+    transactionsCount: 0,
+    categoriesCount: 0,
+    todosCount: 0,
+    notesCount: 0,
+    remindersCount: 0,
+    totalCount: 0,
+  };
 
   const session: P2PSyncSession = {
     peerConnection: pc,
     dataChannel: channel,
     close: () => {
+      try { mqttHandle?.close(); } catch {}
       try { channel.close(); } catch {}
       try { pc.close(); } catch {}
     },
@@ -172,126 +171,52 @@ export async function createHostOffer(): Promise<{
   await waitForIceGathering(pc);
 
   if (!pc.localDescription) {
-    throw new Error('Failed to generate local SDP Offer.');
+    throw new Error('Failed to create local sync offer.');
   }
 
-  const offerCode = encodeSignalData(pc.localDescription);
+  // Encrypt the Offer SDP
+  const encryptedOffer = await encryptPayload(JSON.stringify(pc.localDescription), aesKey);
 
-  const completeWithAnswer = (
-    answerCode: string,
-    onProgress: (info: SyncProgressInfo) => void
-  ): Promise<SyncSummary> => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        onProgress({ stage: 'connecting', message: 'Connecting to peer device...' });
-        const answerDesc = decodeSignalData(answerCode);
-        await pc.setRemoteDescription(new RTCSessionDescription(answerDesc));
+  onProgress({ stage: 'connecting_relay', message: 'Ready to scan...' });
 
-        const timeout = setTimeout(() => {
-          reject(new Error('Connection timed out. Please ensure both devices are in range or on the same network.'));
-        }, 30000);
+  // 1 Single QR Payload: PL2:<roomId>:<keyString>
+  const qrPayload = `${PROTOCOL_1SCAN_PREFIX}${roomId}:${keyString}`;
 
-        channel.onopen = async () => {
-          try {
-            onProgress({ stage: 'transferring', message: 'Connected! Sending local data to peer...' });
-            const localData = await getLocalSyncPayload();
-            sendChunkedMessage(channel, 'SYNC_DATA_EXCHANGE', localData);
-          } catch (err) {
-            clearTimeout(timeout);
-            reject(err);
-          }
-        };
-
-        channel.onmessage = async (event) => {
-          const message = receiver.processPacket(event.data);
-          if (!message) return;
-
-          if (message.type === 'SYNC_DATA_EXCHANGE') {
-            onProgress({ stage: 'merging', message: 'Merging received data from peer...' });
-            try {
-              const remoteData = message.payload as SyncPayload;
-              const summary = await mergeRemoteSyncPayload(remoteData);
-              
-              // Tell peer we are finished
-              sendChunkedMessage(channel, 'SYNC_COMPLETED', { summary });
-              
-              clearTimeout(timeout);
-              onProgress({ stage: 'completed', message: 'Synchronization successful!', summary });
-              resolve(summary);
-            } catch (mergeErr) {
-              clearTimeout(timeout);
-              reject(mergeErr);
-            }
-          }
-        };
-
-        channel.onerror = (e) => {
-          clearTimeout(timeout);
-          reject(new Error('DataChannel encountered an error during sync.'));
-        };
-      } catch (err) {
-        reject(err);
-      }
-    });
-  };
-
-  return {
-    offerCode,
-    session,
-    completeWithAnswer,
-  };
-}
-
-/**
- * Step 2 (Joiner): Scans the Host Offer, sets remote description, generates Answer and QR code string,
- * and handles the bi-directional data transfer.
- */
-export async function createJoinerAnswer(
-  offerCode: string,
-  onProgress: (info: SyncProgressInfo) => void
-): Promise<{
-  answerCode: string;
-  session: P2PSyncSession;
-  syncPromise: Promise<SyncSummary>;
-}> {
-  const pc = new RTCPeerConnection(RTC_CONFIG);
-  const receiver = new ChunkReceiver();
-  let channelRef: RTCDataChannel | null = null;
-
-  const session: P2PSyncSession = {
-    peerConnection: pc,
-    close: () => {
-      try { channelRef?.close(); } catch {}
-      try { pc.close(); } catch {}
-    },
-  };
-
-  onProgress({ stage: 'generating_offer', message: 'Processing host offer and preparing answer...' });
-  const offerDesc = decodeSignalData(offerCode);
-  await pc.setRemoteDescription(new RTCSessionDescription(offerDesc));
-
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  await waitForIceGathering(pc);
-
-  if (!pc.localDescription) {
-    throw new Error('Failed to generate local SDP Answer.');
-  }
-
-  const answerCode = encodeSignalData(pc.localDescription);
-
-  const syncPromise = new Promise<SyncSummary>((resolve, reject) => {
+  const syncPromise = new Promise<SyncResult>(async (resolve, reject) => {
     const timeout = setTimeout(() => {
-      reject(new Error('Peer connection timed out. Please verify Device A scanned the return QR.'));
-    }, 30000);
+      session.close();
+      reject(new Error('Sync session timed out. Please scan the QR code within 60 seconds.'));
+    }, 60000);
 
-    pc.ondatachannel = (ev) => {
-      const channel = ev.channel;
-      channelRef = channel;
-      session.dataChannel = channel;
+    try {
+      mqttHandle = await startMqttHostSignaling(roomId, encryptedOffer, async (encryptedAnswer) => {
+        try {
+          onProgress({ stage: 'connecting_p2p', message: 'Connected to other device! Exchanging records...' });
+
+          const decryptedAnswerStr = await decryptPayload(encryptedAnswer, aesKey);
+          const answerDesc = JSON.parse(decryptedAnswerStr);
+          await pc.setRemoteDescription(new RTCSessionDescription(answerDesc));
+
+          mqttHandle?.close();
+          mqttHandle = null;
+        } catch (err) {
+          clearTimeout(timeout);
+          session.close();
+          reject(err);
+        }
+      });
 
       channel.onopen = async () => {
-        onProgress({ stage: 'transferring', message: 'Connected! Preparing sync exchange...' });
+        try {
+          onProgress({ stage: 'transferring', message: 'Exchanging and updating records...' });
+          const { payload: localData, stats } = await getLocalSyncPayload();
+          localExportStats = stats;
+          sendChunkedMessage(channel, 'SYNC_DATA_EXCHANGE', localData);
+        } catch (err) {
+          clearTimeout(timeout);
+          session.close();
+          reject(err);
+        }
       };
 
       channel.onmessage = async (event) => {
@@ -299,21 +224,26 @@ export async function createJoinerAnswer(
         if (!message) return;
 
         if (message.type === 'SYNC_DATA_EXCHANGE') {
-          onProgress({ stage: 'merging', message: 'Received data. Merging and sending local records...' });
+          onProgress({ stage: 'merging', message: 'Merging records into your device...' });
           try {
-            // First send our local data to host
-            const localData = await getLocalSyncPayload();
-            sendChunkedMessage(channel, 'SYNC_DATA_EXCHANGE', localData);
-
-            // Now merge host's data into our DB
             const remoteData = message.payload as SyncPayload;
-            const summary = await mergeRemoteSyncPayload(remoteData);
+            const importedSummary = await mergeRemoteSyncPayload(remoteData);
 
-            onProgress({ stage: 'completed', message: 'Synchronization successful!', summary });
+            const result: SyncResult = {
+              imported: importedSummary,
+              exported: localExportStats,
+            };
+
+            // Record to persistent sync history
+            await recordSyncHistory('host', importedSummary, localExportStats);
+
+            sendChunkedMessage(channel, 'SYNC_COMPLETED', { result });
             clearTimeout(timeout);
-            resolve(summary);
+            onProgress({ stage: 'completed', message: 'Sync complete!', result });
+            resolve(result);
           } catch (mergeErr) {
             clearTimeout(timeout);
+            session.close();
             reject(mergeErr);
           }
         }
@@ -321,13 +251,160 @@ export async function createJoinerAnswer(
 
       channel.onerror = () => {
         clearTimeout(timeout);
-        reject(new Error('DataChannel error on joiner.'));
+        session.close();
+        reject(new Error('Connection error during sync.'));
       };
-    };
+    } catch (err) {
+      clearTimeout(timeout);
+      session.close();
+      reject(err);
+    }
   });
 
   return {
-    answerCode,
+    qrPayload,
+    session,
+    syncPromise,
+  };
+}
+
+/**
+ * Step 2 (Joiner): Scans 1 QR code and connects directly
+ */
+export async function start1ScanJoinerSession(
+  scannedCode: string,
+  onProgress: (info: SyncProgressInfo) => void
+): Promise<{
+  session: P2PSyncSession;
+  syncPromise: Promise<SyncResult>;
+}> {
+  onProgress({ stage: 'connecting_relay', message: 'Connecting to other device...' });
+
+  const clean = scannedCode.trim();
+  if (!clean.startsWith(PROTOCOL_1SCAN_PREFIX)) {
+    throw new Error('Invalid QR code. Please scan a valid Lifekina Sync QR code.');
+  }
+
+  const parts = clean.slice(PROTOCOL_1SCAN_PREFIX.length).split(':');
+  if (parts.length < 2) {
+    throw new Error('Invalid sync format in QR code.');
+  }
+
+  const [roomId, keyString] = parts;
+  const aesKey = await importSyncSecretKey(keyString);
+
+  const pc = new RTCPeerConnection(RTC_CONFIG);
+  const receiver = new ChunkReceiver();
+  let channelRef: RTCDataChannel | null = null;
+  let mqttHandle: { close: () => void } | null = null;
+  let localExportStats: ExportedSyncStats = {
+    transactionsCount: 0,
+    categoriesCount: 0,
+    todosCount: 0,
+    notesCount: 0,
+    remindersCount: 0,
+    totalCount: 0,
+  };
+
+  const session: P2PSyncSession = {
+    peerConnection: pc,
+    close: () => {
+      try { mqttHandle?.close(); } catch {}
+      try { channelRef?.close(); } catch {}
+      try { pc.close(); } catch {}
+    },
+  };
+
+  const syncPromise = new Promise<SyncResult>(async (resolve, reject) => {
+    const timeout = setTimeout(() => {
+      session.close();
+      reject(new Error('Sync session timed out. Please try again.'));
+    }, 45000);
+
+    try {
+      mqttHandle = await startMqttJoinerSignaling(roomId, async (encryptedOffer) => {
+        onProgress({ stage: 'connecting_p2p', message: 'Connecting and preparing data transfer...' });
+
+        const decryptedOfferStr = await decryptPayload(encryptedOffer, aesKey);
+        const offerDesc = JSON.parse(decryptedOfferStr);
+        await pc.setRemoteDescription(new RTCSessionDescription(offerDesc));
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await waitForIceGathering(pc);
+
+        if (!pc.localDescription) {
+          throw new Error('Failed to create local sync reply.');
+        }
+
+        const encryptedAnswer = await encryptPayload(JSON.stringify(pc.localDescription), aesKey);
+
+        setTimeout(() => {
+          mqttHandle?.close();
+          mqttHandle = null;
+        }, 3000);
+
+        return encryptedAnswer;
+      });
+
+      pc.ondatachannel = (ev) => {
+        const channel = ev.channel;
+        channelRef = channel;
+        session.dataChannel = channel;
+
+        channel.onopen = async () => {
+          onProgress({ stage: 'transferring', message: 'Exchanging data between devices...' });
+        };
+
+        channel.onmessage = async (event) => {
+          const message = receiver.processPacket(event.data);
+          if (!message) return;
+
+          if (message.type === 'SYNC_DATA_EXCHANGE') {
+            onProgress({ stage: 'merging', message: 'Merging records into your device...' });
+            try {
+              // Send local data back to host
+              const { payload: localData, stats } = await getLocalSyncPayload();
+              localExportStats = stats;
+              sendChunkedMessage(channel, 'SYNC_DATA_EXCHANGE', localData);
+
+              // Merge host's data into our DB
+              const remoteData = message.payload as SyncPayload;
+              const importedSummary = await mergeRemoteSyncPayload(remoteData);
+
+              const result: SyncResult = {
+                imported: importedSummary,
+                exported: localExportStats,
+              };
+
+              // Record to persistent sync history
+              await recordSyncHistory('joiner', importedSummary, localExportStats);
+
+              clearTimeout(timeout);
+              onProgress({ stage: 'completed', message: 'Sync complete!', result });
+              resolve(result);
+            } catch (mergeErr) {
+              clearTimeout(timeout);
+              session.close();
+              reject(mergeErr);
+            }
+          }
+        };
+
+        channel.onerror = () => {
+          clearTimeout(timeout);
+          session.close();
+          reject(new Error('Connection error on receiving device.'));
+        };
+      };
+    } catch (err) {
+      clearTimeout(timeout);
+      session.close();
+      reject(err);
+    }
+  });
+
+  return {
     session,
     syncPromise,
   };

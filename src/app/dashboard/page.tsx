@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   TrendingDown, ArrowRight, CheckSquare, FileText,
   Tag, Receipt, CheckCircle2, Clock, Filter, Calendar,
-  PieChart as PieIcon, BarChart3, Bookmark
+  PieChart as PieIcon, BarChart3, Bookmark, ArrowLeftRight
 } from 'lucide-react';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
@@ -73,6 +73,7 @@ export default function DashboardPage() {
     todos,
     notes,
     currencySymbol,
+    getCategoryById,
   } = useApp();
 
   const now = new Date();
@@ -83,6 +84,15 @@ export default function DashboardPage() {
 
   // Active Category/Tab Filter for Dashboard (Default: expenses)
   const [activeTab, setActiveTab] = useState<DashboardTab>('expenses');
+
+  // Mounted state for reliable client-side SVG chart dimensions
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Source Filter State (All Sources / Created on this device / Synced from another device)
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'local' | 'imported'>('all');
 
   // Expense Period Filter States
   const [expPeriodType, setExpPeriodType] = useState<PeriodType>('monthly');
@@ -110,43 +120,84 @@ export default function DashboardPage() {
   const yearsList = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 1. EXPENSES COMPUTATION FOR SELECTED EXPENSE PERIOD
+  // 1. EXPENSES COMPUTATION FOR SELECTED EXPENSE PERIOD & SOURCE
   // ─────────────────────────────────────────────────────────────────────────────
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
+      // Source Filter
+      if (sourceFilter === 'local' && t.syncOrigin === 'imported') return false;
+      if (sourceFilter === 'imported' && t.syncOrigin !== 'imported') return false;
+
       const d = new Date(t.date + 'T00:00:00');
       return isDateInPeriod(d, expPeriodType, expYear, expMonth, expWeek, expQuarter);
     });
-  }, [transactions, expPeriodType, expYear, expMonth, expWeek, expQuarter]);
+  }, [transactions, sourceFilter, expPeriodType, expYear, expMonth, expWeek, expQuarter]);
 
   const totalExpenses = useMemo(() => {
     return filteredTransactions.reduce((sum, t) => sum + t.amount, 0);
   }, [filteredTransactions]);
 
-  const expCatStats = useMemo(() => {
-    const map = new Map<string, { total: number; count: number }>();
-    filteredTransactions.forEach(t => {
-      const existing = map.get(t.categoryId) || { total: 0, count: 0 };
-      map.set(t.categoryId, {
-        total: existing.total + t.amount,
-        count: existing.count + 1,
-      });
-    });
+  const recentFilteredTransactions = useMemo(() => {
+    return [...filteredTransactions]
+      .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
+      .slice(0, 5);
+  }, [filteredTransactions]);
 
-    return categories.map(cat => {
-      const stat = map.get(cat.id) || { total: 0, count: 0 };
-      const percentage = totalExpenses > 0 ? Math.round((stat.total / totalExpenses) * 100) : 0;
-      return {
-        categoryId: cat.id,
+  const expCatStats = useMemo(() => {
+    const map = new Map<string, { total: number; count: number; categoryName: string; categoryColor: string; categoryIcon: string }>();
+
+    filteredTransactions.forEach(t => {
+      const cat = getCategoryById(t.categoryId) || {
+        id: 'cat-other',
+        name: 'Other',
+        color: '#6b7280',
+        icon: 'Tag',
+      };
+
+      const key = cat.name.toLowerCase().trim();
+      const existing = map.get(key) || {
+        total: 0,
+        count: 0,
         categoryName: cat.name,
         categoryColor: cat.color,
         categoryIcon: cat.icon,
+      };
+
+      map.set(key, {
+        total: existing.total + t.amount,
+        count: existing.count + 1,
+        categoryName: cat.name,
+        categoryColor: cat.color,
+        categoryIcon: cat.icon,
+      });
+    });
+
+    const stats: Array<{
+      categoryId: string;
+      categoryName: string;
+      categoryColor: string;
+      categoryIcon: string;
+      total: number;
+      count: number;
+      percentage: number;
+    }> = [];
+
+    map.forEach((stat, key) => {
+      if (stat.total <= 0) return;
+      const percentage = totalExpenses > 0 ? Math.round((stat.total / totalExpenses) * 100) : 0;
+      stats.push({
+        categoryId: key,
+        categoryName: stat.categoryName,
+        categoryColor: stat.categoryColor,
+        categoryIcon: stat.categoryIcon,
         total: stat.total,
         count: stat.count,
         percentage,
-      };
-    }).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
-  }, [filteredTransactions, categories, totalExpenses]);
+      });
+    });
+
+    return stats.sort((a, b) => b.total - a.total);
+  }, [filteredTransactions, getCategoryById, totalExpenses]);
 
   // Chart data for Expenses
   const expTrendChartData = useMemo(() => {
@@ -204,10 +255,14 @@ export default function DashboardPage() {
   }));
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 2. TASK COMPUTATION FOR SELECTED TASK PERIOD
+  // 2. TASK COMPUTATION FOR SELECTED TASK PERIOD & SOURCE
   // ─────────────────────────────────────────────────────────────────────────────
   const filteredTaskStats = useMemo(() => {
     const periodTodos = todos.filter(t => {
+      // Source Filter
+      if (sourceFilter === 'local' && t.syncOrigin === 'imported') return false;
+      if (sourceFilter === 'imported' && t.syncOrigin !== 'imported') return false;
+
       const d = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : new Date(t.createdAt);
       return isDateInPeriod(d, taskPeriodType, taskYear, taskMonth, taskWeek, taskQuarter);
     });
@@ -238,25 +293,33 @@ export default function DashboardPage() {
       lowTotal: low.length,
       lowCompleted,
     };
-  }, [todos, taskPeriodType, taskYear, taskMonth, taskWeek, taskQuarter]);
+  }, [todos, sourceFilter, taskPeriodType, taskYear, taskMonth, taskWeek, taskQuarter]);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 3. NOTES COMPUTATION FOR SELECTED NOTES PERIOD
+  // 3. NOTES COMPUTATION FOR SELECTED NOTES PERIOD & SOURCE
   // ─────────────────────────────────────────────────────────────────────────────
+  const filteredAllNotes = useMemo(() => {
+    return notes.filter(n => {
+      if (sourceFilter === 'local' && n.syncOrigin === 'imported') return false;
+      if (sourceFilter === 'imported' && n.syncOrigin !== 'imported') return false;
+      return true;
+    });
+  }, [notes, sourceFilter]);
+
   const allNoteTags = useMemo(() => {
     const tagsSet = new Set<string>();
-    notes.forEach(n => n.tags?.forEach(t => tagsSet.add(t)));
+    filteredAllNotes.forEach(n => n.tags?.forEach(t => tagsSet.add(t)));
     return Array.from(tagsSet);
-  }, [notes]);
+  }, [filteredAllNotes]);
 
   const filteredPeriodNotes = useMemo(() => {
-    return notes.filter(n => {
+    return filteredAllNotes.filter(n => {
       const d = new Date(n.createdAt);
       const inPeriod = isDateInPeriod(d, notesPeriodType, notesYear, notesMonth, notesWeek, notesQuarter);
       const matchTag = notesTagFilter === 'all' || (n.tags && n.tags.includes(notesTagFilter));
       return inPeriod && matchTag;
     });
-  }, [notes, notesPeriodType, notesYear, notesMonth, notesWeek, notesQuarter, notesTagFilter]);
+  }, [filteredAllNotes, notesPeriodType, notesYear, notesMonth, notesWeek, notesQuarter, notesTagFilter]);
 
   const notesStats = useMemo(() => {
     const totalInPeriod = filteredPeriodNotes.length;
@@ -267,10 +330,10 @@ export default function DashboardPage() {
       totalInPeriod,
       pinnedInPeriod,
       taggedInPeriod,
-      overallTotal: notes.length,
-      overallPinned: notes.filter(n => n.isPinned).length,
+      overallTotal: filteredAllNotes.length,
+      overallPinned: filteredAllNotes.filter(n => n.isPinned).length,
     };
-  }, [filteredPeriodNotes, notes]);
+  }, [filteredPeriodNotes, filteredAllNotes]);
 
   const greeting = (() => {
     const h = now.getHours();
@@ -290,119 +353,125 @@ export default function DashboardPage() {
     quarterVal: number,
     setQuarterVal: (q: number) => void
   ) => (
-    <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Filter size={13} /> Period:
-        </span>
-        {[
-          { key: 'monthly', label: 'Monthly' },
-          { key: 'weekly', label: 'Weekly' },
-          { key: 'quarterly', label: 'Quarterly' },
-          { key: 'yearly', label: 'Yearly' },
-        ].map(p => (
-          <button
-            key={p.key}
-            type="button"
-            onClick={() => setPeriodType(p.key as PeriodType)}
-            style={{
-              padding: '4px 10px',
-              borderRadius: 4,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              background: periodType === p.key ? 'var(--brand-dark)' : '#ffffff',
-              color: periodType === p.key ? '#ffffff' : 'var(--text-sub)',
-              border: `1px solid ${periodType === p.key ? 'var(--brand-dark)' : 'var(--border-light)'}`,
-            }}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        {/* Year Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Year:</span>
-          <select
-            className="fi"
-            value={yearVal}
-            onChange={e => setYearVal(Number(e.target.value))}
-            style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 85 }}
-          >
-            {yearsList.map(y => (
-              <option key={y} value={y}>{y}</option>
+    <div className="filter-bar-card">
+      <div className="filter-bar-row">
+        <div className="filter-bar-group">
+          <span className="filter-control-label">
+            <Filter size={13} /> Period:
+          </span>
+          <div className="period-segmented-wrap">
+            {[
+              { key: 'monthly', label: 'Monthly' },
+              { key: 'weekly', label: 'Weekly' },
+              { key: 'quarterly', label: 'Quarterly' },
+              { key: 'yearly', label: 'Yearly' },
+            ].map(p => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPeriodType(p.key as PeriodType)}
+                className={`period-pill-btn ${periodType === p.key ? 'active' : ''}`}
+              >
+                {p.label}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
 
-        {/* Month Selector (if monthly) */}
-        {periodType === 'monthly' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Month:</span>
+        <div className="filter-bar-group">
+          {/* Year Selector */}
+          <div className="filter-control-wrap">
+            <span className="filter-control-label">Year:</span>
             <select
-              className="fi"
-              value={monthVal}
-              onChange={e => setMonthVal(Number(e.target.value))}
-              style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 110 }}
+              className="filter-control-select"
+              value={yearVal}
+              onChange={e => setYearVal(Number(e.target.value))}
             >
-              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                <option key={m} value={m}>
-                  {new Date(2000, m - 1).toLocaleDateString('en-US', { month: 'short' })}
-                </option>
+              {yearsList.map(y => (
+                <option key={y} value={y}>{y}</option>
               ))}
             </select>
           </div>
-        )}
 
-        {/* Week Selector (if weekly) */}
-        {periodType === 'weekly' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Week:</span>
-            <select
-              className="fi"
-              value={weekVal}
-              onChange={e => setWeekVal(Number(e.target.value))}
-              style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 95 }}
-            >
-              {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
-                <option key={w} value={w}>Week {w}</option>
-              ))}
-            </select>
-          </div>
-        )}
+          {/* Month Selector (if monthly) */}
+          {periodType === 'monthly' && (
+            <div className="filter-control-wrap">
+              <span className="filter-control-label">Month:</span>
+              <select
+                className="filter-control-select"
+                value={monthVal}
+                onChange={e => setMonthVal(Number(e.target.value))}
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                  <option key={m} value={m}>
+                    {new Date(2000, m - 1).toLocaleDateString('en-US', { month: 'short' })}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-        {/* Quarter Selector (if quarterly) */}
-        {periodType === 'quarterly' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Quarter:</span>
-            <select
-              className="fi"
-              value={quarterVal}
-              onChange={e => setQuarterVal(Number(e.target.value))}
-              style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 85 }}
-            >
-              <option value={1}>Q1 (Jan-Mar)</option>
-              <option value={2}>Q2 (Apr-Jun)</option>
-              <option value={3}>Q3 (Jul-Sep)</option>
-              <option value={4}>Q4 (Oct-Dec)</option>
-            </select>
-          </div>
-        )}
+          {/* Week Selector (if weekly) */}
+          {periodType === 'weekly' && (
+            <div className="filter-control-wrap">
+              <span className="filter-control-label">Week:</span>
+              <select
+                className="filter-control-select"
+                value={weekVal}
+                onChange={e => setWeekVal(Number(e.target.value))}
+              >
+                {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
+                  <option key={w} value={w}>Week {w}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Quarter Selector (if quarterly) */}
+          {periodType === 'quarterly' && (
+            <div className="filter-control-wrap">
+              <span className="filter-control-label">Quarter:</span>
+              <select
+                className="filter-control-select"
+                value={quarterVal}
+                onChange={e => setQuarterVal(Number(e.target.value))}
+              >
+                <option value={1}>Q1 (Jan-Mar)</option>
+                <option value={2}>Q2 (Apr-Jun)</option>
+                <option value={3}>Q3 (Jul-Sep)</option>
+                <option value={4}>Q4 (Oct-Dec)</option>
+              </select>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 
   return (
     <div className="dashboard">
-      <div className="dashboard-hero">
+      <div className="dashboard-hero" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
         <div>
           <div className="dashboard-eyebrow">
             {greeting}! Welcome to your central workspace overview.
           </div>
           <h1 className="dashboard-title">Your day, in one place.</h1>
           <div className="dashboard-period">A calm view of your spending, priorities, and ideas.</div>
+        </div>
+
+        {/* Global Dashboard Source Filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <select
+            id="dashboard-source-filter"
+            className="filter-select-standalone"
+            style={{ minWidth: 175, fontWeight: 600 }}
+            value={sourceFilter}
+            onChange={e => setSourceFilter(e.target.value as 'all' | 'local' | 'imported')}
+          >
+            <option value="all">Source: All Records</option>
+            <option value="local">Created on this device</option>
+            <option value="imported">Synced from another device</option>
+          </select>
         </div>
       </div>
 
@@ -514,21 +583,31 @@ export default function DashboardPage() {
               expQuarter, setExpQuarter
             )}
 
-            {expTrendChartData.length === 0 || totalExpenses === 0 ? (
+            {!isMounted ? (
+              <div style={{ width: '100%', height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                Loading chart visualization...
+              </div>
+            ) : expTrendChartData.length === 0 || totalExpenses === 0 ? (
               <EmptyState
                 icon={<Receipt size={24} />}
                 title="No expenses for selected period"
                 description="Adjust your period filter or add expenses in the Expenses section to track spending trends."
               />
             ) : (
-              <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer width="100%" height="100%">
+              <div style={{ width: '100%', height: 260, minHeight: 260 }}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
                   <LineChart data={expTrendChartData} margin={{ top: 10, right: 15, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                    <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                    <XAxis
+                      dataKey="day"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      interval={expPeriodType === 'monthly' ? 2 : 0}
+                    />
                     <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
                     <Tooltip contentStyle={TT_STYLE} formatter={(v: any) => [fmt(Number(v ?? 0)), 'Expenses']} />
-                    <Line type="monotone" dataKey="Expenses" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="Expenses" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981' }} activeDot={{ r: 5 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -544,7 +623,11 @@ export default function DashboardPage() {
                 Category spending distribution bar chart for selected period
               </div>
 
-              {expCatStats.length === 0 ? (
+              {!isMounted ? (
+                <div style={{ width: '100%', height: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  Loading category chart...
+                </div>
+              ) : expCatStats.length === 0 ? (
                 <EmptyState
                   icon={<Tag size={20} />}
                   title="No category data"
@@ -552,8 +635,8 @@ export default function DashboardPage() {
                   compact={true}
                 />
               ) : (
-                <div style={{ width: '100%', height: 250 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                <div style={{ width: '100%', height: 250, minHeight: 250 }}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                     <BarChart data={expCatStats} margin={{ top: 10, right: 15, left: -15, bottom: 25 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                       <XAxis
@@ -583,7 +666,11 @@ export default function DashboardPage() {
                 Where your money went in the selected period
               </div>
 
-              {pieChartData.length === 0 ? (
+              {!isMounted ? (
+                <div style={{ width: '100%', height: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  Loading spending mix...
+                </div>
+              ) : pieChartData.length === 0 ? (
                 <EmptyState
                   icon={<PieIcon size={20} />}
                   title="No spending mix data"
@@ -591,8 +678,8 @@ export default function DashboardPage() {
                   compact={true}
                 />
               ) : (
-                <div style={{ width: '100%', height: 250 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                <div style={{ width: '100%', height: 250, minHeight: 250 }}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                     <PieChart>
                       <Pie
                         data={pieChartData}
@@ -616,6 +703,93 @@ export default function DashboardPage() {
               )}
             </section>
           </div>
+
+          {/* Recent Activity Section for Expenses with Sync Origin Badges */}
+          {recentFilteredTransactions.length > 0 && (
+            <section className="dashboard-panel">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--text-main)' }}>
+                  Recent Expenses in Selected Period ({recentFilteredTransactions.length})
+                </h3>
+                <Link href="/entries" className="btn btn-outline btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                  View All <ArrowRight size={13} />
+                </Link>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {recentFilteredTransactions.map((tx) => {
+                  const cat = getCategoryById(tx.categoryId);
+                  const isSynced = tx.syncOrigin === 'imported';
+
+                  return (
+                    <div
+                      key={tx.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 14px',
+                        borderRadius: 6,
+                        background: '#ffffff',
+                        border: '1px solid var(--border-light)',
+                        gap: 12,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <div
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: '50%',
+                            background: cat ? `${cat.color}18` : '#f1f5f9',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Tag size={15} color={cat?.color || 'var(--text-muted)'} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                              {tx.description}
+                            </span>
+                            {isSynced && (
+                              <span
+                                title="Synced from another device"
+                                style={{
+                                  fontSize: 9.5,
+                                  fontWeight: 600,
+                                  background: 'var(--brand-light)',
+                                  color: 'var(--brand-dark)',
+                                  padding: '1px 5px',
+                                  borderRadius: 'var(--r-full)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 2,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <ArrowLeftRight size={9} /> Synced
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {tx.date} • {cat?.name || 'Uncategorized'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-main)', flexShrink: 0, fontFamily: 'var(--font-heading)' }}>
+                        {fmt(tx.amount)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Call to Action Navigation Link for Expenses */}
           <div style={{ textAlign: 'center', padding: '16px', background: '#f8fafc', borderRadius: 8, border: '1px dashed var(--border-strong)' }}>

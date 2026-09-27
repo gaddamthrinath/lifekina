@@ -5,12 +5,16 @@ export type ThemeType = 'light';
 
 export type DateFormatType = 'MMM DD, YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY';
 
+export type SyncOrigin = 'local' | 'imported';
+
 export interface Category {
   id: string;
   name: string;
   icon: string; // Lucide icon name
   color: string; // hex color
   createdAt: number;
+  syncOrigin?: SyncOrigin;
+  syncedAt?: number;
 }
 
 export interface Transaction {
@@ -22,6 +26,8 @@ export interface Transaction {
   date: string; // ISO date string YYYY-MM-DD
   time: string; // HH:MM 24h
   createdAt: number;
+  syncOrigin?: SyncOrigin;
+  syncedAt?: number;
 }
 
 export interface Settings {
@@ -88,6 +94,8 @@ export interface TodoItem {
   inProgressAt?: number; // Timestamp when task moved to in-progress
   completedAt?: number; // Timestamp when task moved to completed
   timeline?: TaskTimelineEvent[]; // Full transition history
+  syncOrigin?: SyncOrigin;
+  syncedAt?: number;
 }
 
 export interface NoteItem {
@@ -99,6 +107,8 @@ export interface NoteItem {
   color?: string;
   createdAt: number;
   updatedAt: number;
+  syncOrigin?: SyncOrigin;
+  syncedAt?: number;
 }
 
 export interface CalendarReminder {
@@ -111,6 +121,8 @@ export interface CalendarReminder {
   isCompleted?: boolean;
   notified?: boolean;
   createdAt: number;
+  syncOrigin?: SyncOrigin;
+  syncedAt?: number;
 }
 
 export interface SyncPayload {
@@ -137,5 +149,28 @@ export interface SyncSummary {
   remindersAdded: number;
   remindersUpdated: number;
   totalChanges: number;
+}
+
+export interface ExportedSyncStats {
+  transactionsCount: number;
+  categoriesCount: number;
+  todosCount: number;
+  notesCount: number;
+  remindersCount: number;
+  totalCount: number;
+}
+
+export interface SyncResult {
+  imported: SyncSummary;
+  exported: ExportedSyncStats;
+}
+
+export interface SyncHistoryEntry {
+  id: string;
+  timestamp: number;
+  formattedDate: string;
+  role: 'host' | 'joiner';
+  imported: SyncSummary;
+  exported: ExportedSyncStats;
 }
 

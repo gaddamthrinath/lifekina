@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   CheckSquare, Plus, Trash2, Calendar, Clock, CheckCircle2,
-  X, Check, Search, Filter, Pencil, History, Play, CheckCircle
+  X, Check, Search, Filter, Pencil, History, Play, Layers, RotateCcw, ArrowLeftRight
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import EmptyState from '@/components/EmptyState';
@@ -116,8 +116,12 @@ export default function TasksKanbanPage() {
   const [weekVal, setWeekVal] = useState(currentWeek);
   const [quarterVal, setQuarterVal] = useState(currentQuarter);
 
-  // Search State
+  // Search & Source Filter State
   const [search, setSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'local' | 'imported'>('all');
+
+  // Mobile / Stage Filter Tab State
+  const [mobileColView, setMobileColView] = useState<'all' | KanbanStatus>('all');
 
   // Drag State
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -148,9 +152,13 @@ export default function TasksKanbanPage() {
     }
   }, [todos, detailTodo]);
 
-  // Filter Tasks based on Period and Search Filters
+  // Filter Tasks based on Source, Period and Search Filters
   const filteredTodos = useMemo(() => {
     return todos.filter(t => {
+      // Source Filter
+      if (sourceFilter === 'local' && t.syncOrigin === 'imported') return false;
+      if (sourceFilter === 'imported' && t.syncOrigin !== 'imported') return false;
+
       const d = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : new Date(t.createdAt);
       if (!isDateInPeriod(d, periodType, yearVal, monthVal, weekVal, quarterVal)) {
         return false;
@@ -163,7 +171,7 @@ export default function TasksKanbanPage() {
 
       return true;
     });
-  }, [todos, periodType, yearVal, monthVal, weekVal, quarterVal, search]);
+  }, [todos, sourceFilter, periodType, yearVal, monthVal, weekVal, quarterVal, search]);
 
   // Categorize Tasks into Kanban Columns
   const tasksByColumn = useMemo(() => {
@@ -330,131 +338,167 @@ export default function TasksKanbanPage() {
         </div>
       </div>
 
-      {/* Period Filter Bar */}
-      <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Filter size={13} /> Period:
-          </span>
-          {[
-            { key: 'monthly', label: 'Monthly' },
-            { key: 'weekly', label: 'Weekly' },
-            { key: 'quarterly', label: 'Quarterly' },
-            { key: 'yearly', label: 'Yearly' },
-          ].map(p => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => setPeriodType(p.key as PeriodType)}
-              style={{
-                padding: '4px 10px',
-                borderRadius: 4,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: periodType === p.key ? 'var(--brand-dark)' : '#ffffff',
-                color: periodType === p.key ? '#ffffff' : 'var(--text-sub)',
-                border: `1px solid ${periodType === p.key ? 'var(--brand-dark)' : 'var(--border-light)'}`,
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {/* Year Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Year:</span>
-            <select
-              className="fi"
-              value={yearVal}
-              onChange={e => setYearVal(Number(e.target.value))}
-              style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 85 }}
-            >
-              {yearsList.map(y => (
-                <option key={y} value={y}>{y}</option>
+      {/* Unified Filters Card */}
+      <div className="filter-bar-card">
+        {/* Row 1: Period Selection */}
+        <div className="filter-bar-row">
+          <div className="filter-bar-group">
+            <span className="filter-control-label">
+              <Filter size={13} /> Period:
+            </span>
+            <div className="period-segmented-wrap">
+              {[
+                { key: 'monthly', label: 'Monthly' },
+                { key: 'weekly', label: 'Weekly' },
+                { key: 'quarterly', label: 'Quarterly' },
+                { key: 'yearly', label: 'Yearly' },
+              ].map(p => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setPeriodType(p.key as PeriodType)}
+                  className={`period-pill-btn ${periodType === p.key ? 'active' : ''}`}
+                >
+                  {p.label}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
 
-          {/* Month Selector */}
-          {periodType === 'monthly' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Month:</span>
+          <div className="filter-bar-group">
+            {/* Year Selector */}
+            <div className="filter-control-wrap">
+              <span className="filter-control-label">Year:</span>
               <select
-                className="fi"
-                value={monthVal}
-                onChange={e => setMonthVal(Number(e.target.value))}
-                style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 110 }}
+                className="filter-control-select"
+                value={yearVal}
+                onChange={e => setYearVal(Number(e.target.value))}
               >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                  <option key={m} value={m}>
-                    {new Date(2000, m - 1).toLocaleDateString('en-US', { month: 'short' })}
-                  </option>
+                {yearsList.map(y => (
+                  <option key={y} value={y}>{y}</option>
                 ))}
               </select>
             </div>
-          )}
 
-          {/* Week Selector */}
-          {periodType === 'weekly' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Week:</span>
-              <select
-                className="fi"
-                value={weekVal}
-                onChange={e => setWeekVal(Number(e.target.value))}
-                style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 95 }}
-              >
-                {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
-                  <option key={w} value={w}>Week {w}</option>
-                ))}
-              </select>
-            </div>
-          )}
+            {/* Month Selector */}
+            {periodType === 'monthly' && (
+              <div className="filter-control-wrap">
+                <span className="filter-control-label">Month:</span>
+                <select
+                  className="filter-control-select"
+                  value={monthVal}
+                  onChange={e => setMonthVal(Number(e.target.value))}
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                    <option key={m} value={m}>
+                      {new Date(2000, m - 1).toLocaleDateString('en-US', { month: 'short' })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-          {/* Quarter Selector */}
-          {periodType === 'quarterly' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Quarter:</span>
-              <select
-                className="fi"
-                value={quarterVal}
-                onChange={e => setQuarterVal(Number(e.target.value))}
-                style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 85 }}
-              >
-                <option value={1}>Q1 (Jan-Mar)</option>
-                <option value={2}>Q2 (Apr-Jun)</option>
-                <option value={3}>Q3 (Jul-Sep)</option>
-                <option value={4}>Q4 (Oct-Dec)</option>
-              </select>
+            {/* Week Selector */}
+            {periodType === 'weekly' && (
+              <div className="filter-control-wrap">
+                <span className="filter-control-label">Week:</span>
+                <select
+                  className="filter-control-select"
+                  value={weekVal}
+                  onChange={e => setWeekVal(Number(e.target.value))}
+                >
+                  {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
+                    <option key={w} value={w}>Week {w}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Quarter Selector */}
+            {periodType === 'quarterly' && (
+              <div className="filter-control-wrap">
+                <span className="filter-control-label">Quarter:</span>
+                <select
+                  className="filter-control-select"
+                  value={quarterVal}
+                  onChange={e => setQuarterVal(Number(e.target.value))}
+                >
+                  <option value={1}>Q1 (Jan-Mar)</option>
+                  <option value={2}>Q2 (Apr-Jun)</option>
+                  <option value={3}>Q3 (Jul-Sep)</option>
+                  <option value={4}>Q4 (Oct-Dec)</option>
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="filter-bar-divider" />
+
+        {/* Row 2: Search & Source Filter */}
+        <div className="filter-bar-row">
+          <div className="filter-search-box">
+            <Search size={15} className="search-ico" />
+            <input
+              type="text"
+              className="filter-search-input"
+              placeholder="Search tasks by title or description..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="filter-bar-group">
+            {/* Source Filter */}
+            <select
+              id="tasks-source-filter"
+              className="filter-select-standalone"
+              style={{ minWidth: 165 }}
+              value={sourceFilter}
+              onChange={e => setSourceFilter(e.target.value as 'all' | 'local' | 'imported')}
+            >
+              <option value="all">Source: All Records</option>
+              <option value="local">Created on this device</option>
+              <option value="imported">Synced from another device</option>
+            </select>
+
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>
+              {filteredTodos.length} {filteredTodos.length === 1 ? 'task' : 'tasks'}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* Compact Search Bar Controls (Reduced Width) */}
-      <div style={{ background: '#ffffff', borderRadius: 6, padding: '12px 16px', border: '1px solid var(--border-light)', marginBottom: 20, display: 'flex', gap: 12, alignItems: 'center' }}>
-        <div style={{ position: 'relative', width: 240, flexShrink: 0 }}>
-          <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
-          <input
-            type="text"
-            className="fi"
-            placeholder="Search tasks..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ paddingLeft: 32, borderRadius: 6, fontSize: 13, width: '100%' }}
-          />
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          Showing {filteredTodos.length} tasks in Kanban Board
-        </div>
+      {/* Column View Segmented Selector (All Stages / To Do / In Progress / Completed) */}
+      <div className="kanban-col-tabs">
+        {[
+          { id: 'all' as const, title: 'All Stages', count: filteredTodos.length, icon: Layers },
+          ...COLUMNS.map(c => ({ id: c.id, title: c.title, count: tasksByColumn[c.id].length, icon: c.icon }))
+        ].map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`kanban-col-tab-btn ${mobileColView === tab.id ? 'active' : ''}`}
+            onClick={() => setMobileColView(tab.id)}
+          >
+            <tab.icon size={13} />
+            <span>{tab.title}</span>
+            <span className="kanban-tab-badge">{tab.count}</span>
+          </button>
+        ))}
       </div>
 
       {/* KANBAN BOARD VIEW */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18, alignItems: 'start' }}>
-        {COLUMNS.map(col => {
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: mobileColView === 'all' ? 'repeat(auto-fit, minmax(320px, 1fr))' : '1fr',
+          gap: 18,
+          alignItems: 'start',
+        }}
+      >
+        {(mobileColView === 'all' ? COLUMNS : COLUMNS.filter(c => c.id === mobileColView)).map(col => {
           const ColumnIcon = col.icon;
           const tasks = tasksByColumn[col.id];
           const isOver = dragOverCol === col.id;
@@ -497,13 +541,14 @@ export default function TasksKanbanPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', flex: 1, paddingRight: 4 }}>
                 {tasks.length === 0 ? (
                   <div style={{ padding: '28px 16px', textAlign: 'center', border: '1.5px dashed var(--border-strong)', borderRadius: 6, color: 'var(--text-light)', fontSize: 12, background: '#ffffff' }}>
-                    Drop task card here or click + above
+                    No cards in {col.title}. Drag card here or click + above
                   </div>
                 ) : (
                   tasks.map(t => {
                     const pStyle = getPriorityStyle(t.priority);
                     const bg = t.color || '#ffffff';
                     const canEdit = !t.completed && (!t.status || t.status === 'todo');
+                    const isSynced = t.syncOrigin === 'imported';
 
                     return (
                       <div
@@ -525,8 +570,26 @@ export default function TasksKanbanPage() {
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.35 }}>
-                            {t.title}
+                          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span>{t.title}</span>
+                            {isSynced && (
+                              <span
+                                title="Synced from another device"
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  background: 'var(--brand-light)',
+                                  color: 'var(--brand-dark)',
+                                  padding: '1px 6px',
+                                  borderRadius: 'var(--r-full)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                }}
+                              >
+                                <ArrowLeftRight size={10} /> Synced
+                              </span>
+                            )}
                           </div>
                           <div style={{ display: 'flex', gap: 4 }}>
                             {canEdit && (
@@ -556,13 +619,71 @@ export default function TasksKanbanPage() {
                           </div>
                         )}
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingTop: 6, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: pStyle.bg, color: pStyle.color, border: `1px solid ${pStyle.border}`, textTransform: 'uppercase' }}>
-                            {pStyle.label}
-                          </span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: pStyle.bg, color: pStyle.color, border: `1px solid ${pStyle.border}`, textTransform: 'uppercase' }}>
+                              {pStyle.label}
+                            </span>
+                            {t.dueDate && (
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                <Calendar size={11} /> {t.dueDate}
+                              </span>
+                            )}
+                          </div>
                           <span style={{ fontSize: 11, color: 'var(--brand-dark)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                             <History size={12} /> Timeline
                           </span>
+                        </div>
+
+                        {/* 1-Tap Stage Transition Buttons (Mobile & Desktop Friendly) */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 8px',
+                            background: 'rgba(0, 0, 0, 0.025)',
+                            borderRadius: 6,
+                            border: '1px dashed rgba(0, 0, 0, 0.08)',
+                            marginTop: 2,
+                          }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                            Move:
+                          </span>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            {col.id !== 'todo' && (
+                              <button
+                                type="button"
+                                className="task-quick-btn"
+                                title="Move to To Do"
+                                onClick={() => moveTodoStatus(t.id, 'todo')}
+                              >
+                                <RotateCcw size={11} /> To Do
+                              </button>
+                            )}
+                            {col.id !== 'in-progress' && (
+                              <button
+                                type="button"
+                                className="task-quick-btn in-prog"
+                                title="Move to In Progress"
+                                onClick={() => moveTodoStatus(t.id, 'in-progress')}
+                              >
+                                <Play size={10} /> In Progress
+                              </button>
+                            )}
+                            {col.id !== 'completed' && (
+                              <button
+                                type="button"
+                                className="task-quick-btn done"
+                                title="Move to Completed"
+                                onClick={() => moveTodoStatus(t.id, 'completed')}
+                              >
+                                <CheckCircle2 size={11} /> Completed
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -597,7 +718,49 @@ export default function TasksKanbanPage() {
                 </div>
               )}
 
-
+              {/* Task Status Quick Changer Bar */}
+              <div style={{ background: 'rgba(255,255,255,0.85)', padding: '12px 14px', borderRadius: 6, border: '1px solid var(--border-light)', marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <ArrowLeftRight size={13} /> Current Stage / Move Status:
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                  {COLUMNS.map(col => {
+                    const isCurrent = (detailTodo.status || 'todo') === col.id;
+                    const ColIcon = col.icon;
+                    return (
+                      <button
+                        key={col.id}
+                        type="button"
+                        onClick={async () => {
+                          if (!isCurrent) {
+                            await moveTodoStatus(detailTodo.id, col.id);
+                          }
+                        }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          cursor: isCurrent ? 'default' : 'pointer',
+                          border: `1.5px solid ${isCurrent ? col.borderColor : 'var(--border-light)'}`,
+                          background: isCurrent ? col.badgeBg : '#ffffff',
+                          color: isCurrent ? col.badgeColor : 'var(--text-sub)',
+                          boxShadow: isCurrent ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <ColIcon size={13} />
+                        <span>{col.title}</span>
+                        {isCurrent && <Check size={13} style={{ marginLeft: 2 }} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* Duration Metrics Grid */}
               {(() => {

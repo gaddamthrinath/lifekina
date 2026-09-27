@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Search, SortAsc, SortDesc, MoreVertical, Pencil, Trash2,
   ListFilter, Plus, Tag, Check, X, Filter, ChevronLeft, ChevronRight,
-  TrendingDown, Receipt, Calculator, Calendar
+  TrendingDown, Receipt, Calculator, Calendar, ArrowLeftRight
 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { useApp } from '@/context/AppContext';
@@ -106,6 +106,7 @@ export default function EntriesPage() {
   const [search, setSearch] = useState('');
   const [sortF, setSortF] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'local' | 'imported'>('all');
   const [currentPage, setCurrentPage] = useState(1);
 
   // Modals & Menu State
@@ -130,7 +131,7 @@ export default function EntriesPage() {
   // Reset pagination to page 1 whenever filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, periodType, yearVal, monthVal, weekVal, quarterVal, sortF, sortDir]);
+  }, [search, periodType, yearVal, monthVal, weekVal, quarterVal, sortF, sortDir, sourceFilter]);
 
   useEffect(() => {
     if (!menu) return;
@@ -145,10 +146,14 @@ export default function EntriesPage() {
     setMenu({ id, x: rect.right, y: rect.bottom + 4 });
   }, []);
 
-  // Filter transactions by period & search query
+  // Filter transactions by period, search query & sync origin source
   const filtered = useMemo(() =>
     transactions
       .filter(tx => {
+        // Source Filter (Local vs Synced)
+        if (sourceFilter === 'local' && tx.syncOrigin === 'imported') return false;
+        if (sourceFilter === 'imported' && tx.syncOrigin !== 'imported') return false;
+
         // Period Filter
         const d = new Date(tx.date + 'T00:00:00');
         if (!isDateInPeriod(d, periodType, yearVal, monthVal, weekVal, quarterVal)) {
@@ -170,7 +175,7 @@ export default function EntriesPage() {
         const d = b.date.localeCompare(a.date) || b.time.localeCompare(a.time);
         return sortDir === 'desc' ? d : -d;
       }),
-    [transactions, periodType, yearVal, monthVal, weekVal, quarterVal, search, sortF, sortDir, getCategoryById]);
+    [transactions, sourceFilter, periodType, yearVal, monthVal, weekVal, quarterVal, search, sortF, sortDir, getCategoryById]);
 
   // Total expenditure & stats for filtered set
   const totalAmount = useMemo(() => {
@@ -243,107 +248,98 @@ export default function EntriesPage() {
         </div>
       </div>
 
-      {/* Period Filter Bar (Dashboard-aligned) */}
-      <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Filter size={13} /> Period:
-          </span>
-          {[
-            { key: 'monthly', label: 'Monthly' },
-            { key: 'weekly', label: 'Weekly' },
-            { key: 'quarterly', label: 'Quarterly' },
-            { key: 'yearly', label: 'Yearly' },
-          ].map(p => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => setPeriodType(p.key as PeriodType)}
-              style={{
-                padding: '4px 10px',
-                borderRadius: 4,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: periodType === p.key ? 'var(--brand-dark)' : '#ffffff',
-                color: periodType === p.key ? '#ffffff' : 'var(--text-sub)',
-                border: `1px solid ${periodType === p.key ? 'var(--brand-dark)' : 'var(--border-light)'}`,
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {/* Year Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Year:</span>
-            <select
-              className="fi"
-              value={yearVal}
-              onChange={e => setYearVal(Number(e.target.value))}
-              style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 85 }}
-            >
-              {yearsList.map(y => (
-                <option key={y} value={y}>{y}</option>
+      {/* Period Filter Bar */}
+      <div className="filter-bar-card">
+        <div className="filter-bar-row">
+          <div className="filter-bar-group">
+            <span className="filter-control-label">
+              <Filter size={13} /> Period:
+            </span>
+            <div className="period-segmented-wrap">
+              {[
+                { key: 'monthly', label: 'Monthly' },
+                { key: 'weekly', label: 'Weekly' },
+                { key: 'quarterly', label: 'Quarterly' },
+                { key: 'yearly', label: 'Yearly' },
+              ].map(p => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setPeriodType(p.key as PeriodType)}
+                  className={`period-pill-btn ${periodType === p.key ? 'active' : ''}`}
+                >
+                  {p.label}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
 
-          {/* Month Selector */}
-          {periodType === 'monthly' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Month:</span>
+          <div className="filter-bar-group">
+            {/* Year Selector */}
+            <div className="filter-control-wrap">
+              <span className="filter-control-label">Year:</span>
               <select
-                className="fi"
-                value={monthVal}
-                onChange={e => setMonthVal(Number(e.target.value))}
-                style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 110 }}
+                className="filter-control-select"
+                value={yearVal}
+                onChange={e => setYearVal(Number(e.target.value))}
               >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                  <option key={m} value={m}>
-                    {new Date(2000, m - 1).toLocaleDateString('en-US', { month: 'short' })}
-                  </option>
+                {yearsList.map(y => (
+                  <option key={y} value={y}>{y}</option>
                 ))}
               </select>
             </div>
-          )}
 
-          {/* Week Selector */}
-          {periodType === 'weekly' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Week:</span>
-              <select
-                className="fi"
-                value={weekVal}
-                onChange={e => setWeekVal(Number(e.target.value))}
-                style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 95 }}
-              >
-                {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
-                  <option key={w} value={w}>Week {w}</option>
-                ))}
-              </select>
-            </div>
-          )}
+            {/* Month Selector */}
+            {periodType === 'monthly' && (
+              <div className="filter-control-wrap">
+                <span className="filter-control-label">Month:</span>
+                <select
+                  className="filter-control-select"
+                  value={monthVal}
+                  onChange={e => setMonthVal(Number(e.target.value))}
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                    <option key={m} value={m}>
+                      {new Date(2000, m - 1).toLocaleDateString('en-US', { month: 'short' })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-          {/* Quarter Selector */}
-          {periodType === 'quarterly' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Quarter:</span>
-              <select
-                className="fi"
-                value={quarterVal}
-                onChange={e => setQuarterVal(Number(e.target.value))}
-                style={{ padding: '4px 8px', fontSize: 12, height: 32, width: 85 }}
-              >
-                <option value={1}>Q1 (Jan-Mar)</option>
-                <option value={2}>Q2 (Apr-Jun)</option>
-                <option value={3}>Q3 (Jul-Sep)</option>
-                <option value={4}>Q4 (Oct-Dec)</option>
-              </select>
-            </div>
-          )}
+            {/* Week Selector */}
+            {periodType === 'weekly' && (
+              <div className="filter-control-wrap">
+                <span className="filter-control-label">Week:</span>
+                <select
+                  className="filter-control-select"
+                  value={weekVal}
+                  onChange={e => setWeekVal(Number(e.target.value))}
+                >
+                  {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
+                    <option key={w} value={w}>Week {w}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Quarter Selector */}
+            {periodType === 'quarterly' && (
+              <div className="filter-control-wrap">
+                <span className="filter-control-label">Quarter:</span>
+                <select
+                  className="filter-control-select"
+                  value={quarterVal}
+                  onChange={e => setQuarterVal(Number(e.target.value))}
+                >
+                  <option value={1}>Q1 (Jan-Mar)</option>
+                  <option value={2}>Q2 (Apr-Jun)</option>
+                  <option value={3}>Q3 (Jul-Sep)</option>
+                  <option value={4}>Q4 (Oct-Dec)</option>
+                </select>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -397,36 +393,52 @@ export default function EntriesPage() {
         </div>
       </div>
 
-      {/* Search & Sort Toolbar */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div className="search-box" style={{ flex: '0 1 440px', minWidth: 240 }}>
-          <Search size={15} className="search-ico" />
-          <input
-            id="entries-search"
-            className="fi search-input"
-            type="text"
-            placeholder="Search by description, note, or category..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={() => toggleSort('date')}
-            style={{ fontWeight: sortF === 'date' ? 700 : 500, borderColor: sortF === 'date' ? 'var(--brand)' : undefined, color: sortF === 'date' ? 'var(--brand-dark)' : undefined }}
-          >
-            {sortF === 'date' && sortDir === 'asc' ? <SortAsc size={14} /> : <SortDesc size={14} />}
-            Date
-          </button>
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={() => toggleSort('amount')}
-            style={{ fontWeight: sortF === 'amount' ? 700 : 500, borderColor: sortF === 'amount' ? 'var(--brand)' : undefined, color: sortF === 'amount' ? 'var(--brand-dark)' : undefined }}
-          >
-            {sortF === 'amount' ? (sortDir === 'asc' ? <SortAsc size={14} /> : <SortDesc size={14} />) : null}
-            Amount
-          </button>
+      {/* Search & Sort Toolbar Card */}
+      <div className="filter-bar-card" style={{ marginBottom: 16 }}>
+        <div className="filter-bar-row">
+          <div className="filter-search-box">
+            <Search size={15} className="search-ico" />
+            <input
+              id="entries-search"
+              className="filter-search-input"
+              type="text"
+              placeholder="Search by description, note, or category..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="filter-bar-group">
+            {/* Source Filter Dropdown */}
+            <select
+              id="entries-source-filter"
+              className="filter-select-standalone"
+              style={{ minWidth: 165 }}
+              value={sourceFilter}
+              onChange={e => setSourceFilter(e.target.value as 'all' | 'local' | 'imported')}
+            >
+              <option value="all">Source: All Records</option>
+              <option value="local">Created on this device</option>
+              <option value="imported">Synced from another device</option>
+            </select>
+
+            <button
+              className="filter-btn-compact btn btn-outline btn-sm"
+              onClick={() => toggleSort('date')}
+              style={{ fontWeight: sortF === 'date' ? 700 : 500, borderColor: sortF === 'date' ? 'var(--brand)' : undefined, color: sortF === 'date' ? 'var(--brand-dark)' : undefined }}
+            >
+              {sortF === 'date' && sortDir === 'asc' ? <SortAsc size={14} /> : <SortDesc size={14} />}
+              Date
+            </button>
+            <button
+              className="filter-btn-compact btn btn-outline btn-sm"
+              onClick={() => toggleSort('amount')}
+              style={{ fontWeight: sortF === 'amount' ? 700 : 500, borderColor: sortF === 'amount' ? 'var(--brand)' : undefined, color: sortF === 'amount' ? 'var(--brand-dark)' : undefined }}
+            >
+              {sortF === 'amount' ? (sortDir === 'asc' ? <SortAsc size={14} /> : <SortDesc size={14} />) : null}
+              Amount
+            </button>
+          </div>
         </div>
       </div>
 
@@ -435,10 +447,10 @@ export default function EntriesPage() {
         <div className="card">
           <EmptyState
             icon={<Receipt size={24} />}
-            title={search ? 'No expenses match your search' : 'No expenses for selected period'}
-            description={search ? 'Try adjusting your search terms or filters.' : 'Adjust period filter or click "+ Add Expense" above to record an entry.'}
+            title={search || sourceFilter !== 'all' ? 'No expenses match your filters' : 'No expenses for selected period'}
+            description={search || sourceFilter !== 'all' ? 'Try adjusting your search terms or source filter.' : 'Adjust period filter or click "+ Add Expense" above to record an entry.'}
             action={
-              !search ? (
+              !search && sourceFilter === 'all' ? (
                 <button className="btn btn-primary" onClick={() => { setEditing(undefined); setModal(true); }}>
                   <Plus size={15} /> Add Expense
                 </button>
@@ -447,72 +459,187 @@ export default function EntriesPage() {
           />
         </div>
       ) : (
-        <div className="card">
-          {/* Table Header */}
-          <div className="entry-table-head">
-            <span style={{ cursor: 'pointer' }} onClick={() => toggleSort('date')}>
-              Date &amp; Time {sortF === 'date' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-            </span>
-            <span>Description</span>
-            <span>Category</span>
-            <span style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('amount')}>
-              Amount {sortF === 'amount' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-            </span>
-            <span />
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* Desktop Table View (>= 769px) */}
+          <div className="desktop-expense-table">
+            <div className="entry-table-head">
+              <span style={{ cursor: 'pointer' }} onClick={() => toggleSort('date')}>
+                Date &amp; Time {sortF === 'date' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+              </span>
+              <span>Description</span>
+              <span>Category</span>
+              <span style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('amount')}>
+                Amount {sortF === 'amount' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+              </span>
+              <span />
+            </div>
+
+            {/* Zebra Striped Table Rows */}
+            {paginatedList.map((tx, idx) => {
+              const cat = getCategoryById(tx.categoryId);
+              const isOdd = idx % 2 !== 0;
+              const isSynced = tx.syncOrigin === 'imported';
+
+              return (
+                <div
+                  key={tx.id}
+                  className="entry-row"
+                  style={{
+                    background: isOdd ? '#f8fafc' : '#ffffff',
+                    borderBottom: '1px solid var(--border-sub)',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-main)' }}>
+                      {isoToLabel(tx.date, dateFormat)}
+                    </div>
+                    <div className="entry-time">{formatTime12h(tx.time)}</div>
+                  </div>
+
+                  <div className="entry-main">
+                    <div className="entry-ico" style={{ background: cat ? `${cat.color}15` : 'var(--bg-subtle)' }}>
+                      {cat && <CategoryIcon name={cat.icon} size={16} color={cat.color} strokeWidth={2} />}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="entry-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }} title={tx.description}>
+                        <span>{tx.description}</span>
+                        {isSynced && (
+                          <span
+                            title="Synced from another device"
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              background: 'var(--brand-light)',
+                              color: 'var(--brand-dark)',
+                              padding: '1px 6px',
+                              borderRadius: 'var(--r-full)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                            }}
+                          >
+                            <ArrowLeftRight size={10} /> Synced
+                          </span>
+                        )}
+                      </div>
+                      {tx.note && <div className="entry-note" title={tx.note}>{tx.note}</div>}
+                    </div>
+                  </div>
+
+                  {cat ? (
+                    <div>
+                      <span className="cat-pill" style={{ background: `${cat.color}15`, color: cat.color }}>
+                        <CategoryIcon name={cat.icon} size={11} color={cat.color} strokeWidth={2} />
+                        {cat.name}
+                      </span>
+                    </div>
+                  ) : <div />}
+
+                  <div className="entry-amount-col">
+                    <span className="entry-amount">{fmt(tx.amount)}</span>
+                  </div>
+
+                  <div style={{ textAlign: 'right' }}>
+                    <button className="ibtn" onClick={e => openMenu(e, tx.id)} aria-label="Options">
+                      <MoreVertical size={15} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Zebra Striped Table Rows */}
-          {paginatedList.map((tx, idx) => {
-            const cat = getCategoryById(tx.categoryId);
-            const isOdd = idx % 2 !== 0;
+          {/* Mobile & Tablet Card Items (<= 768px) */}
+          <div className="mobile-expense-list">
+            {paginatedList.map((tx, idx) => {
+              const cat = getCategoryById(tx.categoryId);
+              const isSynced = tx.syncOrigin === 'imported';
 
-            return (
-              <div
-                key={tx.id}
-                className="entry-row"
-                style={{
-                  background: isOdd ? '#f8fafc' : '#ffffff',
-                  borderBottom: '1px solid var(--border-sub)',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-main)' }}>
-                    {isoToLabel(tx.date, dateFormat)}
+              return (
+                <div
+                  key={tx.id}
+                  className="mobile-expense-card"
+                  style={{
+                    borderBottom: idx === paginatedList.length - 1 ? 'none' : '1px solid var(--border-light)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    {/* Left: Icon & Description & Metadata */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                      <div
+                        className="entry-ico"
+                        style={{
+                          background: cat ? `${cat.color}15` : 'var(--bg-subtle)',
+                          width: 36,
+                          height: 36,
+                          borderRadius: 8,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {cat ? (
+                          <CategoryIcon name={cat.icon} size={17} color={cat.color} strokeWidth={2} />
+                        ) : (
+                          <Tag size={17} color="var(--text-muted)" />
+                        )}
+                      </div>
+
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)' }}>
+                            {tx.description}
+                          </span>
+                          {isSynced && (
+                            <span
+                              title="Synced from another device"
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: 600,
+                                background: 'var(--brand-light)',
+                                color: 'var(--brand-dark)',
+                                padding: '1px 5px',
+                                borderRadius: 'var(--r-full)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 2,
+                              }}
+                            >
+                              <ArrowLeftRight size={9} /> Synced
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, color: cat ? cat.color : 'var(--text-sub)' }}>
+                            {cat?.name || 'Uncategorized'}
+                          </span>
+                          <span>•</span>
+                          <span>{isoToLabel(tx.date, dateFormat)}</span>
+                          <span>•</span>
+                          <span>{formatTime12h(tx.time)}</span>
+                        </div>
+
+                        {tx.note && (
+                          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {tx.note}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Amount & Actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-heading)' }}>
+                        {fmt(tx.amount)}
+                      </span>
+                      <button className="ibtn" onClick={e => openMenu(e, tx.id)} aria-label="Options" style={{ padding: 4 }}>
+                        <MoreVertical size={16} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="entry-time">{formatTime12h(tx.time)}</div>
                 </div>
-
-                <div className="entry-main">
-                  <div className="entry-ico" style={{ background: cat ? `${cat.color}15` : 'var(--bg-subtle)' }}>
-                    {cat && <CategoryIcon name={cat.icon} size={16} color={cat.color} strokeWidth={2} />}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="entry-name" title={tx.description}>{tx.description}</div>
-                    {tx.note && <div className="entry-note" title={tx.note}>{tx.note}</div>}
-                  </div>
-                </div>
-
-                {cat ? (
-                  <div>
-                    <span className="cat-pill" style={{ background: `${cat.color}15`, color: cat.color }}>
-                      <CategoryIcon name={cat.icon} size={11} color={cat.color} strokeWidth={2} />
-                      {cat.name}
-                    </span>
-                  </div>
-                ) : <div />}
-
-                <div className="entry-amount-col">
-                  <span className="entry-amount">{fmt(tx.amount)}</span>
-                </div>
-
-                <div style={{ textAlign: 'right' }}>
-                  <button className="ibtn" onClick={e => openMenu(e, tx.id)} aria-label="Options">
-                    <MoreVertical size={15} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
 
           {/* Pagination Controls Footer */}
           <div style={{ padding: '12px 20px', background: '#f8fafc', borderTop: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>

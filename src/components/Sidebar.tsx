@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Receipt, CheckSquare, FileText, Calendar, Settings, Sparkles, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Receipt, CheckSquare, FileText, Calendar, Settings, Sparkles, ShieldCheck, Download } from 'lucide-react';
+import { usePWAInstall } from './PWAInstallPrompt';
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard',   icon: LayoutDashboard },
@@ -13,9 +14,9 @@ const NAV = [
   { href: '/settings',  label: 'Settings',    icon: Settings },
 ];
 
-
 export default function Sidebar() {
   const path = usePathname();
+  const { isStandalone, triggerInstall } = usePWAInstall();
 
   return (
     <aside className="sidebar">
@@ -39,6 +40,20 @@ export default function Sidebar() {
             </Link>
           );
         })}
+
+        {!isStandalone && (
+          <button
+            type="button"
+            className="sb-install-card"
+            onClick={() => triggerInstall()}
+          >
+            <Download size={15} color="var(--brand-dark)" />
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-main)' }}>Install Desktop App</div>
+              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>1-Click Standalone Window</div>
+            </div>
+          </button>
+        )}
       </nav>
 
       <div className="sb-footer">
@@ -53,3 +68,4 @@ export default function Sidebar() {
     </aside>
   );
 }
+

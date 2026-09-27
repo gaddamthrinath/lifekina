@@ -39,6 +39,7 @@ export default function CalendarPage() {
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState<boolean>(false);
   const [modalInitialDate, setModalInitialDate] = useState<string>('');
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'default'>('default');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'local' | 'imported'>('all');
 
   // Load Data
   const loadData = useCallback(async () => {
@@ -124,12 +125,31 @@ export default function CalendarPage() {
     setIsExpenseModalOpen(true);
   };
 
+  // Filter items by source (Local vs Synced)
+  const filteredTransactions = transactions.filter((t) => {
+    if (sourceFilter === 'local' && t.syncOrigin === 'imported') return false;
+    if (sourceFilter === 'imported' && t.syncOrigin !== 'imported') return false;
+    return true;
+  });
+
+  const filteredTodos = todos.filter((td) => {
+    if (sourceFilter === 'local' && td.syncOrigin === 'imported') return false;
+    if (sourceFilter === 'imported' && td.syncOrigin !== 'imported') return false;
+    return true;
+  });
+
+  const filteredReminders = reminders.filter((r) => {
+    if (sourceFilter === 'local' && r.syncOrigin === 'imported') return false;
+    if (sourceFilter === 'imported' && r.syncOrigin !== 'imported') return false;
+    return true;
+  });
+
   // Filter items for selected day drawer
-  const dayTransactions = transactions.filter((t) => t.date === selectedDate);
-  const dayTodos = todos.filter(
+  const dayTransactions = filteredTransactions.filter((t) => t.date === selectedDate);
+  const dayTodos = filteredTodos.filter(
     (td) => (td.dueDate || new Date(td.createdAt).toISOString().slice(0, 10)) === selectedDate
   );
-  const dayReminders = reminders.filter((r) => r.date === selectedDate);
+  const dayReminders = filteredReminders.filter((r) => r.date === selectedDate);
 
   return (
     <div className="calendar-page-layout">
@@ -142,6 +162,8 @@ export default function CalendarPage() {
         onRequestNotif={handleRequestNotif}
         viewMode={viewMode}
         onToggleViewMode={setViewMode}
+        sourceFilter={sourceFilter}
+        onSourceFilterChange={setSourceFilter}
       />
 
       {/* Main Content Area (Grid + Drawer) */}
@@ -151,9 +173,9 @@ export default function CalendarPage() {
           selectedDate={selectedDate}
           currencySymbol={currencySymbol}
           viewMode={viewMode}
-          transactions={transactions}
-          todos={todos}
-          reminders={reminders}
+          transactions={filteredTransactions}
+          todos={filteredTodos}
+          reminders={filteredReminders}
           onSelectDate={handleSelectDate}
           onAddReminderForDate={handleOpenAddReminder}
         />

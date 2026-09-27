@@ -4,55 +4,51 @@ import { useState, useEffect, useRef } from 'react';
 import {
   X,
   Smartphone,
-  Laptop,
   ArrowRight,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
   QrCode,
-  Layers,
   ArrowLeftRight,
   ShieldCheck,
+  Download,
+  Upload,
 } from 'lucide-react';
 import QrCodeView from './QrCodeView';
 import QrScanner from './QrScanner';
 import {
-  createHostOffer,
-  createJoinerAnswer,
+  create1ScanHostSession,
+  start1ScanJoinerSession,
   P2PSyncSession,
-  SyncProgressInfo,
 } from '@/lib/p2pSync';
-import { SyncSummary } from '@/lib/types';
+import { SyncResult } from '@/lib/types';
 import { useApp } from '@/context/AppContext';
 
 interface SyncModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSyncCompleted?: () => void;
 }
 
 type ModalFlow =
   | 'CHOOSE'
   | 'HOST_GENERATING'
-  | 'HOST_SHOW_OFFER'
-  | 'HOST_SCAN_ANSWER'
-  | 'JOINER_SCAN_OFFER'
-  | 'JOINER_SHOW_ANSWER'
+  | 'HOST_SHOW_QR'
+  | 'JOINER_SCAN'
   | 'SYNCING'
   | 'SUCCESS'
   | 'ERROR';
 
-export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
+export default function SyncModal({ isOpen, onClose, onSyncCompleted }: SyncModalProps) {
   const { reloadAll } = useApp();
 
   const [flow, setFlow] = useState<ModalFlow>('CHOOSE');
-  const [offerCode, setOfferCode] = useState<string>('');
-  const [answerCode, setAnswerCode] = useState<string>('');
+  const [qrCodePayload, setQrCodePayload] = useState<string>('');
   const [progressMsg, setProgressMsg] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
   const sessionRef = useRef<P2PSyncSession | null>(null);
-  const hostCompleteFnRef = useRef<((answer: string, onProgress: (i: SyncProgressInfo) => void) => Promise<SyncSummary>) | null>(null);
 
   // Reset state when opening/closing
   useEffect(() => {
@@ -60,11 +56,10 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
       sessionRef.current?.close();
       sessionRef.current = null;
       setFlow('CHOOSE');
-      setOfferCode('');
-      setAnswerCode('');
+      setQrCodePayload('');
       setProgressMsg('');
       setErrorMessage('');
-      setSyncSummary(null);
+      setSyncResult(null);
     }
   }, [isOpen]);
 
@@ -76,65 +71,61 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
     onClose();
   };
 
-  // ─── HOST FLOW ─────────────────────────────────────────────────────────────
+  // ─── 1-SCAN HOST FLOW (DEVICE A) ───────────────────────────────────────────
   const startHostFlow = async () => {
     try {
       setFlow('HOST_GENERATING');
-      setProgressMsg('Generating secure P2P sync session...');
-      const { offerCode: code, session, completeWithAnswer } = await createHostOffer();
-      sessionRef.current = session;
-      hostCompleteFnRef.current = completeWithAnswer;
-      setOfferCode(code);
-      setFlow('HOST_SHOW_OFFER');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to initialize sync session.';
-      setErrorMessage(msg);
-      setFlow('ERROR');
-    }
-  };
+      setProgressMsg('Preparing sync session...');
 
-  const handleHostScannedAnswer = async (scannedAnswer: string) => {
-    if (!hostCompleteFnRef.current) return;
-    try {
-      setFlow('SYNCING');
-      setProgressMsg('Connecting devices...');
-      const summary = await hostCompleteFnRef.current(scannedAnswer, (info) => {
+      const { qrPayload, session, syncPromise } = await create1ScanHostSession((info) => {
         setProgressMsg(info.message);
       });
-      setSyncSummary(summary);
-      await reloadAll();
-      setFlow('SUCCESS');
+
+      sessionRef.current = session;
+      setQrCodePayload(qrPayload);
+      setFlow('HOST_SHOW_QR');
+
+      // Await peer scan and sync in the background
+      syncPromise
+        .then(async (result) => {
+          setSyncResult(result);
+          await reloadAll();
+          onSyncCompleted?.();
+          setFlow('SUCCESS');
+        })
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'Sync could not be completed.';
+          setErrorMessage(msg);
+          setFlow('ERROR');
+        });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Sync handshake failed.';
+      const msg = err instanceof Error ? err.message : 'Failed to initialize sync.';
       setErrorMessage(msg);
       setFlow('ERROR');
     }
   };
 
-  // ─── JOINER FLOW ───────────────────────────────────────────────────────────
+  // ─── 1-SCAN JOINER FLOW (DEVICE B) ─────────────────────────────────────────
   const startJoinerFlow = () => {
-    setFlow('JOINER_SCAN_OFFER');
+    setFlow('JOINER_SCAN');
   };
 
-  const handleJoinerScannedOffer = async (scannedOffer: string) => {
+  const handleJoinerScannedQr = async (scannedCode: string) => {
     try {
       setFlow('SYNCING');
-      setProgressMsg('Processing offer from Device A...');
-      const { answerCode: code, session, syncPromise } = await createJoinerAnswer(
-        scannedOffer,
-        (info) => {
-          setProgressMsg(info.message);
-        }
-      );
-      sessionRef.current = session;
-      setAnswerCode(code);
-      setFlow('JOINER_SHOW_ANSWER');
+      setProgressMsg('Connecting to other device...');
 
-      // Await completion in background while showing answer QR
+      const { session, syncPromise } = await start1ScanJoinerSession(scannedCode, (info) => {
+        setProgressMsg(info.message);
+      });
+
+      sessionRef.current = session;
+
       syncPromise
-        .then(async (summary) => {
-          setSyncSummary(summary);
+        .then(async (result) => {
+          setSyncResult(result);
           await reloadAll();
+          onSyncCompleted?.();
           setFlow('SUCCESS');
         })
         .catch((err: unknown) => {
@@ -143,7 +134,7 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
           setFlow('ERROR');
         });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to read sync offer.';
+      const msg = err instanceof Error ? err.message : 'Failed to read QR code.';
       setErrorMessage(msg);
       setFlow('ERROR');
     }
@@ -168,7 +159,7 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
           background: 'var(--bg-surface)',
           borderRadius: 16,
           width: '100%',
-          maxWidth: 480,
+          maxWidth: 500,
           boxShadow: 'var(--shadow-md)',
           border: '1px solid var(--border-light)',
           display: 'flex',
@@ -205,10 +196,10 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
             </div>
             <div>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-main)' }}>
-                Device-to-Device Sync
+                Sync Between Devices
               </h2>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                100% Serverless • End-to-End Encrypted
+                Direct &amp; Private Sync
               </div>
             </div>
           </div>
@@ -246,7 +237,7 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
               >
                 <ShieldCheck size={18} style={{ color: 'var(--brand-dark)', flexShrink: 0, marginTop: 2 }} />
                 <span>
-                  Sync expenses, notes, and tasks between any two devices directly over local WebRTC. No data is ever stored on any server.
+                  Synchronize your expenses, notes, and tasks directly between any two devices. Both devices will receive and combine each other&apos;s records.
                 </span>
               </div>
 
@@ -287,10 +278,10 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
                     </div>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-main)' }}>
-                        Show QR Code (Device A)
+                        Show QR Code (This Device)
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                        Generate a QR code on this device to start sync.
+                        Display a QR code on this screen for your other device to scan.
                       </div>
                     </div>
                   </div>
@@ -333,10 +324,10 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
                     </div>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-main)' }}>
-                        Scan QR Code (Device B)
+                        Scan QR Code (Other Device)
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                        Use camera to scan QR from Device A and connect.
+                        Use this device&apos;s camera to scan the code from your other device.
                       </div>
                     </div>
                   </div>
@@ -346,7 +337,7 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
             </div>
           )}
 
-          {/* 2. HOST GENERATING OFFER */}
+          {/* 2. HOST GENERATING */}
           {flow === 'HOST_GENERATING' && (
             <div style={{ textAlign: 'center', padding: '30px 0' }}>
               <RefreshCw size={36} className="spin" style={{ color: 'var(--brand)', margin: '0 auto 16px' }} />
@@ -354,124 +345,49 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
                 {progressMsg}
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-                Preparing P2P encryption keys and local network routes...
+                Setting up connection...
               </div>
             </div>
           )}
 
-          {/* 3. HOST SHOW OFFER QR */}
-          {flow === 'HOST_SHOW_OFFER' && (
+          {/* 3. HOST SHOW QR (1 SCAN ONLY) */}
+          {flow === 'HOST_SHOW_QR' && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)', textAlign: 'center' }}>
+                Point your other device&apos;s camera at this QR code
+              </div>
+
+              <QrCodeView value={qrCodePayload} />
+
               <div
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: 'var(--brand-light)',
-                  color: 'var(--brand-dark)',
-                  padding: '4px 12px',
-                  borderRadius: 'var(--r-full)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                Step 1 of 2
-              </div>
-
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)', textAlign: 'center' }}>
-                Scan this QR code with Device B
-              </div>
-
-              <QrCodeView value={offerCode} />
-
-              <button
-                type="button"
-                onClick={() => setFlow('HOST_SCAN_ANSWER')}
-                style={{
-                  width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
                   gap: 8,
-                  padding: '12px 18px',
+                  fontSize: 13,
+                  color: 'var(--brand-dark)',
+                  background: 'var(--brand-light)',
+                  padding: '10px 16px',
                   borderRadius: 'var(--r-md)',
-                  background: 'var(--brand)',
-                  color: '#ffffff',
-                  fontSize: 14,
+                  width: '100%',
+                  justifyContent: 'center',
                   fontWeight: 600,
-                  marginTop: 6,
                 }}
               >
-                <span>Scanned on Device B? Now Scan Return QR</span>
-                <ArrowRight size={16} />
-              </button>
+                <RefreshCw size={15} className="spin" />
+                <span>Waiting for other device to scan...</span>
+              </div>
             </div>
           )}
 
-          {/* 4. HOST SCAN ANSWER QR */}
-          {flow === 'HOST_SCAN_ANSWER' && (
+          {/* 4. JOINER SCAN QR */}
+          {flow === 'JOINER_SCAN' && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: 'var(--brand-light)',
-                  color: 'var(--brand-dark)',
-                  padding: '4px 12px',
-                  borderRadius: 'var(--r-full)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                Step 2 of 2
-              </div>
-
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)', textAlign: 'center' }}>
-                Scan the Return QR code shown on Device B
+                Scan the QR code shown on your other device
               </div>
 
-              <QrScanner onScan={handleHostScannedAnswer} title="Scan Return QR from Device B" />
-
-              <button
-                type="button"
-                onClick={() => setFlow('HOST_SHOW_OFFER')}
-                style={{
-                  fontSize: 12,
-                  color: 'var(--text-muted)',
-                  textDecoration: 'underline',
-                  marginTop: 6,
-                }}
-              >
-                &larr; Back to Device A QR code
-              </button>
-            </div>
-          )}
-
-          {/* 5. JOINER SCAN OFFER QR */}
-          {flow === 'JOINER_SCAN_OFFER' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: 'var(--brand-light)',
-                  color: 'var(--brand-dark)',
-                  padding: '4px 12px',
-                  borderRadius: 'var(--r-full)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                Step 1 of 2
-              </div>
-
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)', textAlign: 'center' }}>
-                Scan QR code displayed on Device A
-              </div>
-
-              <QrScanner onScan={handleJoinerScannedOffer} title="Scan Device A QR Code" />
+              <QrScanner onScan={handleJoinerScannedQr} title="Scan QR Code" />
 
               <button
                 type="button"
@@ -488,52 +404,7 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
             </div>
           )}
 
-          {/* 6. JOINER SHOW ANSWER QR */}
-          {flow === 'JOINER_SHOW_ANSWER' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: 'var(--brand-light)',
-                  color: 'var(--brand-dark)',
-                  padding: '4px 12px',
-                  borderRadius: 'var(--r-full)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                Step 2 of 2
-              </div>
-
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)', textAlign: 'center' }}>
-                Show this Return QR to Device A to complete sync
-              </div>
-
-              <QrCodeView value={answerCode} />
-
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontSize: 13,
-                  color: 'var(--text-sub)',
-                  background: 'var(--bg-subtle)',
-                  padding: '10px 14px',
-                  borderRadius: 'var(--r-md)',
-                  width: '100%',
-                  justifyContent: 'center',
-                }}
-              >
-                <RefreshCw size={15} className="spin" style={{ color: 'var(--brand)' }} />
-                <span>Waiting for Device A to scan...</span>
-              </div>
-            </div>
-          )}
-
-          {/* 7. SYNCING / TRANSFERRING */}
+          {/* 5. SYNCING / CONNECTING */}
           {flow === 'SYNCING' && (
             <div style={{ textAlign: 'center', padding: '30px 0' }}>
               <RefreshCw size={40} className="spin" style={{ color: 'var(--brand)', margin: '0 auto 16px' }} />
@@ -541,77 +412,116 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
                 Syncing in Progress
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 6 }}>
-                {progressMsg || 'Exchanging records and merging data stores...'}
+                {progressMsg || 'Transferring and updating data...'}
               </div>
             </div>
           )}
 
-          {/* 8. SUCCESS */}
+          {/* 6. SUCCESS */}
           {flow === 'SUCCESS' && (
-            <div style={{ textAlign: 'center', padding: '10px 0' }}>
+            <div style={{ textAlign: 'center', padding: '6px 0' }}>
               <div
                 style={{
-                  width: 56,
-                  height: 56,
+                  width: 52,
+                  height: 52,
                   borderRadius: 'var(--r-full)',
                   background: 'var(--brand-light)',
                   color: 'var(--brand-dark)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  margin: '0 auto 16px',
+                  margin: '0 auto 14px',
                 }}
               >
-                <CheckCircle2 size={32} />
+                <CheckCircle2 size={30} />
               </div>
 
               <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-main)' }}>
                 Devices Synchronized!
               </div>
 
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4, marginBottom: 20 }}>
-                All local records and changes have been merged bidirectionally.
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4, marginBottom: 16 }}>
+                Both devices now have all updated records.
               </div>
 
-              {syncSummary && (
-                <div
-                  style={{
-                    background: 'var(--bg-subtle)',
-                    borderRadius: 12,
-                    padding: 14,
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(2, 1fr)',
-                    gap: 10,
-                    textAlign: 'left',
-                    fontSize: 12,
-                    marginBottom: 20,
-                  }}
-                >
-                  <div style={{ padding: '6px 10px', background: 'var(--bg-surface)', borderRadius: 8 }}>
-                    <div style={{ color: 'var(--text-muted)' }}>Transactions:</div>
-                    <div style={{ fontWeight: 700, color: 'var(--text-main)', marginTop: 2 }}>
-                      +{syncSummary.transactionsAdded} added, {syncSummary.transactionsUpdated} updated
+              {syncResult && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+                  {/* Imported Section */}
+                  <div
+                    style={{
+                      background: 'var(--brand-light)',
+                      border: '1px solid var(--brand-mid)',
+                      borderRadius: 12,
+                      padding: 12,
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--brand-dark)', marginBottom: 8 }}>
+                      <Download size={15} />
+                      <span>Imported into this device:</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, fontSize: 12 }}>
+                      <div style={{ background: 'var(--bg-surface)', padding: '6px 10px', borderRadius: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Expenses: </span>
+                        <strong>+{syncResult.imported.transactionsAdded} added</strong>
+                        {syncResult.imported.transactionsUpdated > 0 && <span style={{ color: 'var(--text-muted)' }}>, {syncResult.imported.transactionsUpdated} updated</span>}
+                      </div>
+
+                      <div style={{ background: 'var(--bg-surface)', padding: '6px 10px', borderRadius: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Notes: </span>
+                        <strong>+{syncResult.imported.notesAdded} added</strong>
+                        {syncResult.imported.notesUpdated > 0 && <span style={{ color: 'var(--text-muted)' }}>, {syncResult.imported.notesUpdated} updated</span>}
+                      </div>
+
+                      <div style={{ background: 'var(--bg-surface)', padding: '6px 10px', borderRadius: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Tasks: </span>
+                        <strong>+{syncResult.imported.todosAdded} added</strong>
+                        {syncResult.imported.todosUpdated > 0 && <span style={{ color: 'var(--text-muted)' }}>, {syncResult.imported.todosUpdated} updated</span>}
+                      </div>
+
+                      <div style={{ background: 'var(--bg-surface)', padding: '6px 10px', borderRadius: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Categories: </span>
+                        <strong>+{syncResult.imported.categoriesAdded} added</strong>
+                      </div>
                     </div>
                   </div>
 
-                  <div style={{ padding: '6px 10px', background: 'var(--bg-surface)', borderRadius: 8 }}>
-                    <div style={{ color: 'var(--text-muted)' }}>Categories:</div>
-                    <div style={{ fontWeight: 700, color: 'var(--text-main)', marginTop: 2 }}>
-                      +{syncSummary.categoriesAdded} added
+                  {/* Exported Section */}
+                  <div
+                    style={{
+                      background: 'var(--bg-subtle)',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: 12,
+                      padding: 12,
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text-main)', marginBottom: 8 }}>
+                      <Upload size={15} />
+                      <span>Sent to other device:</span>
                     </div>
-                  </div>
 
-                  <div style={{ padding: '6px 10px', background: 'var(--bg-surface)', borderRadius: 8 }}>
-                    <div style={{ color: 'var(--text-muted)' }}>Todos:</div>
-                    <div style={{ fontWeight: 700, color: 'var(--text-main)', marginTop: 2 }}>
-                      +{syncSummary.todosAdded} added, {syncSummary.todosUpdated} updated
-                    </div>
-                  </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, fontSize: 12 }}>
+                      <div style={{ background: 'var(--bg-surface)', padding: '6px 10px', borderRadius: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Expenses: </span>
+                        <strong>{syncResult.exported.transactionsCount} records</strong>
+                      </div>
 
-                  <div style={{ padding: '6px 10px', background: 'var(--bg-surface)', borderRadius: 8 }}>
-                    <div style={{ color: 'var(--text-muted)' }}>Notes:</div>
-                    <div style={{ fontWeight: 700, color: 'var(--text-main)', marginTop: 2 }}>
-                      +{syncSummary.notesAdded} added, {syncSummary.notesUpdated} updated
+                      <div style={{ background: 'var(--bg-surface)', padding: '6px 10px', borderRadius: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Notes: </span>
+                        <strong>{syncResult.exported.notesCount} records</strong>
+                      </div>
+
+                      <div style={{ background: 'var(--bg-surface)', padding: '6px 10px', borderRadius: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Tasks: </span>
+                        <strong>{syncResult.exported.todosCount} records</strong>
+                      </div>
+
+                      <div style={{ background: 'var(--bg-surface)', padding: '6px 10px', borderRadius: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Categories: </span>
+                        <strong>{syncResult.exported.categoriesCount} records</strong>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -635,7 +545,7 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
             </div>
           )}
 
-          {/* 9. ERROR */}
+          {/* 7. ERROR */}
           {flow === 'ERROR' && (
             <div style={{ textAlign: 'center', padding: '16px 0' }}>
               <div
@@ -669,7 +579,7 @@ export default function SyncModal({ isOpen, onClose }: SyncModalProps) {
                   borderRadius: 'var(--r-md)',
                 }}
               >
-                {errorMessage || 'Connection timed out or signal code was invalid.'}
+                {errorMessage || 'Connection timed out or network error occurred.'}
               </div>
 
               <div style={{ display: 'flex', gap: 10 }}>

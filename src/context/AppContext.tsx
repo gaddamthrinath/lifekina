@@ -48,16 +48,16 @@ import { getCurrencyByCode } from '@/lib/currencies';
 
 import LockScreen from '@/components/LockScreen';
 
-// Default expense categories only
-const DEFAULT_CATEGORIES: Omit<Category, 'id' | 'createdAt'>[] = [
-  { name: 'Food', icon: 'UtensilsCrossed', color: '#f97316' },
-  { name: 'Transport', icon: 'Car', color: '#3b82f6' },
-  { name: 'Shopping', icon: 'ShoppingBag', color: '#a855f7' },
-  { name: 'Bills', icon: 'FileText', color: '#ef4444' },
-  { name: 'Health', icon: 'Heart', color: '#ec4899' },
-  { name: 'Education', icon: 'BookOpen', color: '#14b8a6' },
-  { name: 'Entertainment', icon: 'Tv', color: '#f59e0b' },
-  { name: 'Other', icon: 'MoreHorizontal', color: '#6b7280' },
+// Default expense categories with standardized universal IDs
+export const DEFAULT_CATEGORIES: Array<{ id: string; name: string; icon: string; color: string }> = [
+  { id: 'cat-food', name: 'Food', icon: 'UtensilsCrossed', color: '#f97316' },
+  { id: 'cat-transport', name: 'Transport', icon: 'Car', color: '#3b82f6' },
+  { id: 'cat-shopping', name: 'Shopping', icon: 'ShoppingBag', color: '#a855f7' },
+  { id: 'cat-bills', name: 'Bills', icon: 'FileText', color: '#ef4444' },
+  { id: 'cat-health', name: 'Health', icon: 'Heart', color: '#ec4899' },
+  { id: 'cat-education', name: 'Education', icon: 'BookOpen', color: '#14b8a6' },
+  { id: 'cat-entertainment', name: 'Entertainment', icon: 'Tv', color: '#f59e0b' },
+  { id: 'cat-other', name: 'Other', icon: 'MoreHorizontal', color: '#6b7280' },
 ];
 
 interface AppContextValue {
@@ -174,12 +174,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setIsLocked(true);
   }, []);
 
-  // Seed default categories if none exist
+  // Seed default categories & perform self-healing migration for existing transactions
   const seedCategories = useCallback(async () => {
     const existing = await getAllCategories();
-    if (existing.length === 0) {
-      for (const cat of DEFAULT_CATEGORIES) {
-        await addCategory({ ...cat, id: generateId(), createdAt: Date.now() });
+    const existingMapByName = new Map<string, Category>(existing.map(c => [c.name.toLowerCase().trim(), c]));
+    const existingMapById = new Map<string, Category>(existing.map(c => [c.id, c]));
+
+    // 1. Ensure all default categories exist with standard universal IDs
+    for (const def of DEFAULT_CATEGORIES) {
+      const matchByName = existingMapByName.get(def.name.toLowerCase().trim());
+      const matchById = existingMapById.get(def.id);
+
+      if (!matchByName && !matchById) {
+        const newCat: Category = { ...def, createdAt: Date.now() };
+        await addCategory(newCat);
+        existingMapById.set(def.id, newCat);
+        existingMapByName.set(def.name.toLowerCase().trim(), newCat);
+      }
+    }
+
+    // 2. Self-Healing Migration: Check all existing transactions to ensure categoryId references a valid category
+    const allCategoriesNow = await getAllCategories();
+    const validCatIds = new Set(allCategoriesNow.map(c => c.id));
+    const catNameMap = new Map<string, string>(allCategoriesNow.map(c => [c.name.toLowerCase().trim(), c.id]));
+    const defaultOtherId = catNameMap.get('other') || 'cat-other';
+
+    const allTxs = await getAllTransactions();
+    for (const tx of allTxs) {
+      if (!validCatIds.has(tx.categoryId)) {
+        const lowerCatId = (tx.categoryId || '').toLowerCase().trim();
+        let targetCatId: string | undefined;
+
+        for (const [name, id] of catNameMap.entries()) {
+          if (lowerCatId.includes(name) || name.includes(lowerCatId) || lowerCatId === id.toLowerCase()) {
+            targetCatId = id;
+            break;
+          }
+        }
+
+        const repairedCatId = targetCatId || defaultOtherId;
+        await updateTransaction({ ...tx, categoryId: repairedCatId });
       }
     }
   }, []);
@@ -264,7 +298,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const getCategories = useCallback((): Category[] => categories, [categories]);
 
   const getCategoryById = useCallback((id: string): Category | undefined => {
-    return categories.find(c => c.id === id);
+    if (!id) return categories.find(c => c.id === 'cat-other' || c.name.toLowerCase() === 'other') || categories[0];
+    const exact = categories.find(c => c.id === id);
+    if (exact) return exact;
+
+    // Match by standard ID name or lowercase title
+    const normalizedKey = id.replace(/^cat-/, '').toLowerCase().trim();
+    const byName = categories.find(c => c.name.toLowerCase().trim() === normalizedKey || c.id.toLowerCase().trim() === normalizedKey);
+    if (byName) return byName;
+
+    // Fallback to static default definition
+    const def = DEFAULT_CATEGORIES.find(c => c.id === id || c.name.toLowerCase().trim() === normalizedKey);
+    if (def) return { ...def, createdAt: 0 };
+
+    return categories.find(c => c.id === 'cat-other' || c.name.toLowerCase() === 'other') || categories[0];
   }, [categories]);
 
   // ─── Todos ───────────────────────────────────────────────────────────────────

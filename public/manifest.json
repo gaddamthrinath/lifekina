@@ -1,25 +1,76 @@
 {
-  "name": "Lifekina",
+  "id": "/?source=pwa",
+  "name": "Lifekina — Private Daily Workspace",
   "short_name": "Lifekina",
-  "description": "A private, local-first workspace for your daily tasks, notes, and expenses. No login, no servers.",
-  "start_url": "/",
+  "description": "A private, local-first workspace for your daily tasks, notes, and expenses. 100% local, no login required.",
+  "start_url": "/dashboard",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#f8fafc",
-  "theme_color": "#10b981",
-  "orientation": "portrait-primary",
+  "theme_color": "#059669",
+  "orientation": "any",
+  "categories": ["finance", "productivity", "utilities"],
   "icons": [
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ],
-  "categories": ["finance", "productivity"]
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View financial & task overview",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Daily Tasks",
+      "short_name": "Tasks",
+      "description": "Manage Kanban tasks & checklist",
+      "url": "/tasks",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Expenses & Entries",
+      "short_name": "Expenses",
+      "description": "Track expenses and transactions",
+      "url": "/entries",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Notes",
+      "short_name": "Notes",
+      "description": "View and write private notes",
+      "url": "/notes",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
 }
