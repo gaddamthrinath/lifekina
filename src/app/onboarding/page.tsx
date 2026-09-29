@@ -77,7 +77,7 @@ export default function OnboardingPage() {
           </div>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-main)', letterSpacing: -0.4, fontFamily: 'var(--font-heading)' }}>Lifekina</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Life in motion — 100% Offline Workspace</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Life in motion — 100% Offline sanctuary</div>
           </div>
         </div>
 
@@ -240,7 +240,7 @@ export default function OnboardingPage() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="btn btn-outline" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setStep(3)}>Back</button>
               <button className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }} onClick={finish} disabled={saving} id="ob-start">
-                <Check size={16} /> {saving ? 'Opening Workspace…' : 'Open Dashboard'}
+                <Check size={16} /> {saving ? 'Opening sanctuary…' : 'Open Dashboard'}
               </button>
             </div>
           </div>

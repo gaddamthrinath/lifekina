@@ -1,16 +1,24 @@
 {
   "id": "/?source=pwa",
-  "name": "Lifekina — Private Daily Workspace",
+  "name": "Lifekina — Private Daily sanctuary",
   "short_name": "Lifekina",
-  "description": "A private, local-first workspace for your daily tasks, notes, and expenses. 100% local, no login required.",
+  "description": "A private, local-first sanctuary for your daily tasks, notes, and expenses. 100% local, no login required.",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
   "background_color": "#f8fafc",
   "theme_color": "#059669",
   "orientation": "any",
-  "categories": ["finance", "productivity", "utilities"],
+  "categories": [
+    "finance",
+    "productivity",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -49,28 +57,48 @@
       "short_name": "Dashboard",
       "description": "View financial & task overview",
       "url": "/dashboard",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Daily Tasks",
       "short_name": "Tasks",
       "description": "Manage Kanban tasks & checklist",
       "url": "/tasks",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Expenses & Entries",
       "short_name": "Expenses",
       "description": "Track expenses and transactions",
       "url": "/entries",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Notes",
       "short_name": "Notes",
       "description": "View and write private notes",
       "url": "/notes",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }

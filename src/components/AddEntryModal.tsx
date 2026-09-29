@@ -82,7 +82,7 @@ export default function AddEntryModal({ onClose, editingTransaction }: Props) {
         <div className="modal-head">
           <div>
             <div className="modal-title">{editingTransaction ? 'Edit Expense' : 'Add Expense'}</div>
-            <div className="modal-sub">Record an expense in your Lifekina workspace.</div>
+            <div className="modal-sub">Record an expense in your Lifekina sanctuary.</div>
           </div>
           <button className="ibtn" onClick={onClose} aria-label="Close">
             <X size={16} />

@@ -1728,7 +1728,7 @@ main.page-body:has(.notes-editor-full) {
   gap: 10px;
 }
 
-.workspace-status {
+.sanctuary-status {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1999,7 +1999,7 @@ main.page-body:has(.notes-editor-full) {
     display: flex;
   }
 
-  .workspace-status {
+  .sanctuary-status {
     display: none;
   }
 
@@ -4128,6 +4128,7 @@ select.filter-select-standalone:focus {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -4217,7 +4218,8 @@ select.filter-select-standalone:focus {
   .pwa-install-banner {
     left: 12px;
     right: 12px;
-    bottom: 74px; /* Above mobile bottom nav */
+    bottom: 74px;
+    /* Above mobile bottom nav */
     max-width: none;
     padding: 12px 14px;
   }
@@ -4255,10 +4257,13 @@ select.filter-select-standalone:focus {
 }
 
 @keyframes pulseLogo {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1);
     box-shadow: 0 10px 25px -5px rgba(5, 150, 105, 0.35);
   }
+
   50% {
     transform: scale(1.05);
     box-shadow: 0 14px 30px -4px rgba(5, 150, 105, 0.45);

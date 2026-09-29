@@ -8,7 +8,7 @@ export default function TopHeader() {
 
   return (
     <header className="top-header">
-      <div className="workspace-status">
+      <div className="sanctuary-status">
         <span>private space for your daily life</span>
       </div>
 

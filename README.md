@@ -1,6 +1,6 @@
-# Lifekina — Your Private Daily Workspace & Expense Tracker
+# Lifekina — Your Private Daily sanctuary & Expense Tracker
 
-Lifekina is a sleek, modern, **100% local-first workspace** designed for managing your daily expenses, tasks, notes, calendar events, and reminders with absolute privacy. No cloud databases, no external servers, no login required — everything stays strictly on your device.
+Lifekina is a sleek, modern, **100% local-first sanctuary** designed for managing your daily expenses, tasks, notes, calendar events, and reminders with absolute privacy. No cloud databases, no external servers, no login required — everything stays strictly on your device.
 
 ---
 
@@ -36,7 +36,7 @@ Lifekina is a sleek, modern, **100% local-first workspace** designed for managin
 ### 🛡️ 6. 100% Privacy & Data Ownership
 - **IndexedDB Local Storage:** Fast client-side database storing all your transactions, tasks, notes, and reminders locally.
 - **Data Export & Import:** Backup your data as a JSON file or restore it anytime.
-- **Biometric / WebAuthn & PIN Lock Option:** Optional local passkey or PIN lock to protect your workspace.
+- **Biometric / WebAuthn & PIN Lock Option:** Optional local passkey or PIN lock to protect your sanctuary.
 
 ---
 

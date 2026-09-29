@@ -453,7 +453,7 @@ export default function DashboardPage() {
       <div className="dashboard-hero" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
         <div>
           <div className="dashboard-eyebrow">
-            {greeting}! Welcome to your central workspace overview.
+            {greeting}! Welcome to your central sanctuary overview.
           </div>
           <h1 className="dashboard-title">Your day, in one place.</h1>
           <div className="dashboard-period">A calm view of your spending, priorities, and ideas.</div>

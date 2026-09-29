@@ -37,7 +37,7 @@ export default function ClientRoot({ children }: { children: React.ReactNode }) 
 
   if (isLoading) {
     return (
-      <div className="loading-screen" role="status" aria-label="Loading workspace">
+      <div className="loading-screen" role="status" aria-label="Loading sanctuary">
         <div className="loading-logo-box">
           <Sparkles size={24} color="#fff" strokeWidth={2.5} />
         </div>
@@ -46,7 +46,7 @@ export default function ClientRoot({ children }: { children: React.ReactNode }) 
         </div>
         <div className="spinner" />
         <span style={{ fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 500 }}>
-          Opening your private workspace...
+          Opening your private sanctuary...
         </span>
       </div>
     );

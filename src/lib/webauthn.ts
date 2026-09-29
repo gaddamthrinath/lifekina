@@ -59,7 +59,7 @@ export async function registerWebAuthnCredential(username = 'Lifekina User'): Pr
   const publicKeyOptions: PublicKeyCredentialCreationOptions & { hints?: string[] } = {
     challenge,
     rp: {
-      name: 'Lifekina Workspace',
+      name: 'Lifekina sanctuary',
       id: window.location.hostname === 'localhost' ? 'localhost' : window.location.hostname,
     },
     user: {
@@ -113,12 +113,12 @@ export async function authenticateWebAuthn(credentialId?: string): Promise<boole
 
   const allowCredentials: PublicKeyCredentialDescriptor[] = credentialId
     ? [
-        {
-          id: base64URLToBuffer(credentialId).buffer as ArrayBuffer,
-          type: 'public-key',
-          transports: ['internal'],
-        },
-      ]
+      {
+        id: base64URLToBuffer(credentialId).buffer as ArrayBuffer,
+        type: 'public-key',
+        transports: ['internal'],
+      },
+    ]
     : [];
 
   const publicKeyOptions: PublicKeyCredentialRequestOptions & { hints?: string[] } = {

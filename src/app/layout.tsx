@@ -5,7 +5,7 @@ import ClientRoot from '@/components/ClientRoot';
 
 export const metadata: Metadata = {
   title: 'Lifekina — Life in motion',
-  description: 'A private, local-first workspace for your daily tasks, notes, and expenses. No login, no servers.',
+  description: 'A private, local-first sanctuary for your daily tasks, notes, and expenses. No login, no servers.',
   manifest: '/manifest.json',
   icons: {
     icon: [
