@@ -1,5 +1,5 @@
 // Service Worker for Lifekina
-const CACHE_NAME = 'lifekina-v2';
+const CACHE_NAME = 'lifekina-v3';
 
 const PRECACHE_ASSETS = [
   '/',
